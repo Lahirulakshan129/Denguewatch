@@ -29,8 +29,12 @@ export function useWeather() {
     if (s.status === 'fulfilled') setStatus(s.value)
     if (l.status === 'fulfilled') setLogs(l.value)
     if (w.status === 'fulfilled') setWeatherData(w.value)
-    if (p.status === 'fulfilled') setPredictions(p.value)
-    if (ap.status === 'fulfilled') setAllPredictions(ap.value)
+    if (p.status === 'fulfilled' && Array.isArray(p.value) && p.value.length) {
+      setPredictions(p.value)
+    }
+    if (ap.status === 'fulfilled' && Array.isArray(ap.value) && ap.value.length) {
+      setAllPredictions(ap.value)
+    }
     if (d.status === 'fulfilled') setDengueCounts(d.value)
     if (ws.status === 'fulfilled') setWeatherStats(ws.value)
     setLoading(false)
@@ -58,7 +62,14 @@ export function useWeather() {
     setJobRunning(j => ({ ...j, prediction: true }))
     try {
       const result = await api.triggerPrediction(dryRun)
-      await load()
+      if (result?.predictions?.length) {
+        setPredictions(result.predictions)
+        setAllPredictions((prev) => {
+          const next = result.predictions
+          const keys = new Set(next.map((row) => `${row.district}_${row.predicted_year}_${row.predicted_week}`))
+          return [...prev.filter((row) => !keys.has(`${row.district}_${row.predicted_year}_${row.predicted_week}`)), ...next]
+        })
+      }
       return result
     } finally {
       setJobRunning(j => ({ ...j, prediction: false }))

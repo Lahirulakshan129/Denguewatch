@@ -46,7 +46,7 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 export function WeatherTrendChart({ data, metrics = ['avg_temp', 'humidity'] }) {
-  if (!data?.length) return <EmptyChart message="No weather data yet" />
+  if (!data?.length) return <EmptyChart message="No weather yet. Admin: click Fetch Weather to pull last week from Open-Meteo." />
 
   const chartData = data.map(row => ({
     week: `W${String(row.week || '').padStart(2,'0')}`,
@@ -155,19 +155,18 @@ export function DistrictTrendChart({ data, district }) {
 }
 
 export function PredictionHistoryChart({ allPredictions }) {
-  if (!allPredictions?.length) return <EmptyChart message="No prediction history" />
+  if (!allPredictions?.length) return <EmptyChart message="No forecast weeks yet — run prediction after weather is in the database" />
 
-  // Group by week and sum
   const byWeek = {}
   allPredictions.forEach(r => {
-    const key = `W${String(r.predicted_week || '').padStart(2,'0')} ${r.predicted_year}`
-    if (!byWeek[key]) byWeek[key] = { week: key, total: 0, max: 0 }
-    const c = parseInt(r.predicted_cases) || 0
-    byWeek[key].total += c
-    byWeek[key].max = Math.max(byWeek[key].max, c)
+    const year = parseInt(r.predicted_year) || 0
+    const week = parseInt(r.predicted_week) || 0
+    const key = `${year}_${String(week).padStart(2,'0')}`
+    if (!byWeek[key]) byWeek[key] = { sort: year * 100 + week, week: `Forecast W${String(week).padStart(2,'0')} ${year}`, predicted_cases: 0 }
+    byWeek[key].predicted_cases += parseInt(r.predicted_cases) || 0
   })
 
-  const data = Object.values(byWeek).slice(-12)
+  const data = Object.values(byWeek).sort((a, b) => a.sort - b.sort).slice(-12)
 
   return (
     <ResponsiveContainer width="100%" height={180}>
@@ -180,9 +179,9 @@ export function PredictionHistoryChart({ allPredictions }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="week" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} width={32} />
+        <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} width={36} />
         <Tooltip content={<CustomTooltip />} />
-        <Area type="monotone" dataKey="total" stroke="#ef4444" strokeWidth={2} fill="url(#grad_total)" dot={false} name="predicted_cases" />
+        <Area type="monotone" dataKey="predicted_cases" stroke="#ef4444" strokeWidth={2} fill="url(#grad_total)" dot={{ r: 3 }} />
       </AreaChart>
     </ResponsiveContainer>
   )
@@ -241,7 +240,9 @@ export function DistrictYearlyComparisonChart({ district, dengueCounts, allPredi
     })
   }
   
-  const chartData = Object.values(dataMap)
+  const chartData = Object.values(dataMap).filter((row) =>
+    Object.keys(row).some((k) => k !== 'week' && row[k] != null)
+  )
   const sortedYears = Array.from(years).sort()
   
   const YEAR_COLORS = [
@@ -269,6 +270,7 @@ export function DistrictYearlyComparisonChart({ district, dengueCounts, allPredi
             stroke={String(year).includes('Forecasted') ? '#64748b' : YEAR_COLORS[i % YEAR_COLORS.length]} 
             strokeWidth={String(year).includes('Forecasted') ? 2 : 1.5}
             strokeDasharray={String(year).includes('Forecasted') ? '5 5' : '0'}
+            connectNulls
             dot={false}
             activeDot={{ r: 4 }}
           />

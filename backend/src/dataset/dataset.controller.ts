@@ -18,6 +18,13 @@ export class DatasetController {
     private dataset: DatasetService,
   ) {}
 
+  @Post('migrate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async migrateCsvs() {
+    return this.dataset.importAllCsvs();
+  }
+
   @Post('upload')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -49,9 +56,14 @@ export class DatasetController {
       record.district = row.district;
       record.avg_temp = row.avg_temp ? parseFloat(row.avg_temp) : null;
       record.avg_humidity = row.avg_humidity ? parseFloat(row.avg_humidity) : null;
-      record.total_rainfall = row.total_rainfall ? parseFloat(row.total_rainfall) : null;
+      record.total_rainfall = (row.total_rainfall ?? row.total_precip) ? parseFloat(row.total_rainfall ?? row.total_precip) : null;
       record.avg_windspeed = row.avg_windspeed ? parseFloat(row.avg_windspeed) : null;
       record.dengue_cases = row.dengue_cases ? parseInt(row.dengue_cases) : null;
+      record.max_temp = row.max_temp ? parseFloat(row.max_temp) : null;
+      record.min_temp = row.min_temp ? parseFloat(row.min_temp) : null;
+      record.rainy_days = row.rainy_days ? parseFloat(row.rainy_days) : null;
+      record.population_density = row.population_density ? parseFloat(row.population_density) : null;
+      record.district_id = row.district_id ? parseInt(row.district_id) : null;
 
       rows.push(record);
     }
@@ -64,7 +76,10 @@ export class DatasetController {
         .into(DatasetRecord)
         .values(r)
         .orUpdate(
-          ['avg_temp', 'avg_humidity', 'total_rainfall', 'avg_windspeed', 'dengue_cases'],
+          [
+            'avg_temp', 'avg_humidity', 'total_rainfall', 'avg_windspeed', 'dengue_cases',
+            'max_temp', 'min_temp', 'rainy_days', 'population_density', 'district_id',
+          ],
           ['year', 'week', 'district']
         )
         .execute();
@@ -76,29 +91,28 @@ export class DatasetController {
 
   @Get('download')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.OFFICER)
   async downloadCsv(@Res() res: Response) {
-    const data = await this.datasetRepo.find({ order: { year: 'ASC', week: 'ASC', district: 'ASC' } });
-    
-    const headers = ['Year', 'Week', 'District', 'Avg_Temp', 'Avg_Humidity', 'Total_Rainfall', 'Avg_Windspeed', 'Dengue_Cases'];
-    const lines = [headers.join(',')];
-    
-    for (const r of data) {
-      lines.push([
-        r.year,
-        r.week,
-        r.district,
-        r.avg_temp ?? '',
-        r.avg_humidity ?? '',
-        r.total_rainfall ?? '',
-        r.avg_windspeed ?? '',
-        r.dengue_cases ?? ''
-      ].join(','));
-    }
+    return this.sendCsv(res, 'training_dataset.csv', await this.dataset.toTrainingCsv());
+  }
 
-    const csvContent = lines.join('\n');
+  @Get('download/weather')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OFFICER)
+  async downloadWeather(@Res() res: Response) {
+    return this.sendCsv(res, 'weather_weekly.csv', await this.dataset.toWeatherCsv());
+  }
+
+  @Get('download/predictions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OFFICER)
+  async downloadPredictions(@Res() res: Response) {
+    return this.sendCsv(res, 'predictions.csv', await this.dataset.toPredictionsCsv());
+  }
+
+  private sendCsv(res: Response, filename: string, csvContent: string) {
     res.header('Content-Type', 'text/csv');
-    res.attachment('training_dataset.csv');
+    res.attachment(filename);
     return res.send(csvContent);
   }
 }

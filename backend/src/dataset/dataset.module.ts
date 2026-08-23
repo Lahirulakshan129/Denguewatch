@@ -3,10 +3,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatasetController } from './dataset.controller';
 import { DatasetRecord } from './dataset.entity';
 import { DatasetService } from './dataset.service';
+import { PredictionRecord } from '../prediction/prediction.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DatasetRecord]), AuthModule],
+  imports: [TypeOrmModule.forFeature([DatasetRecord, PredictionRecord]), AuthModule],
   controllers: [DatasetController],
   providers: [DatasetService],
   exports: [TypeOrmModule, DatasetService],

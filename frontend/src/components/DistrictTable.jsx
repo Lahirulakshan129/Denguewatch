@@ -29,17 +29,24 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
       if (!curr || parseInt(d.week) > parseInt(curr.week)) dengueMap[d.district] = d
     })
 
-    return Object.entries(latestWeather).map(([district, w]) => {
+    const names = new Set([
+      ...Object.keys(latestWeather),
+      ...Object.keys(predMap),
+      ...Object.keys(dengueMap),
+    ])
+
+    return Array.from(names).map((district) => {
+      const w = latestWeather[district]
       const pred = predMap[district]
       const act = dengueMap[district]
       return {
         district,
-        week: w.week,
-        year: w.year,
-        avg_temp: parseFloat(w.avg_temp) || 0,
-        humidity: parseFloat(w.humidity) || 0,
-        precipitation: parseFloat(w.precipitation) || 0,
-        wind_speed: parseFloat(w.wind_speed) || 0,
+        week: w?.week ?? pred?.predicted_week ?? act?.week,
+        year: w?.year ?? pred?.predicted_year ?? act?.year,
+        avg_temp: parseFloat(w?.avg_temp) || 0,
+        humidity: parseFloat(w?.humidity) || 0,
+        precipitation: parseFloat(w?.precipitation) || 0,
+        wind_speed: parseFloat(w?.wind_speed) || 0,
         predicted_cases: pred ? parseInt(pred.predicted_cases) : null,
         confidence_low: pred ? parseInt(pred.confidence_low) : null,
         confidence_high: pred ? parseInt(pred.confidence_high) : null,

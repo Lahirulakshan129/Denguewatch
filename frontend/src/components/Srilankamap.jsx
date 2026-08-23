@@ -13,8 +13,9 @@ export default function SriLankaMap({ predictions, onDistrictClick, selectedDist
     const pos = DISTRICT_COORDINATES[name];
     const pred = predMap[name];
     const cases = pred ? parseInt(pred.predicted_cases) || 0 : 0;
-    return [pos[0], pos[1], cases];
-  }).filter(p => p[2] > 0); // Only include points with actual cases for the heat map
+    const intensity = pred ? Math.max(cases, 8) : 0;
+    return [pos[0], pos[1], intensity];
+  }).filter(p => p[2] > 0)
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '400px', borderRadius: '12px', overflow: 'hidden' }}>

@@ -1,0 +1,27 @@
+district,predicted_week,predicted_year,predicted_cases,confidence_low,confidence_high
+Ampara,26,2026,11,9,12
+Anuradhapura,26,2026,17,14,19
+Badulla,26,2026,45,38,51
+Batticaloa,26,2026,45,38,51
+Colombo,26,2026,429,364,493
+Galle,26,2026,259,220,297
+Gampaha,26,2026,420,357,483
+Hambantota,26,2026,62,52,71
+Jaffna,26,2026,15,12,17
+Kalmunai,1,2025,11,9,12
+Kalutara,26,2026,282,239,324
+Kandy,26,2026,344,292,395
+Kegalle,26,2026,109,92,125
+Kilinochchi,26,2026,41,34,47
+Kurunegala,26,2026,217,184,249
+Mannar,26,2026,64,54,73
+Matale,26,2026,213,181,244
+Matara,26,2026,217,184,249
+Monaragala,26,2026,34,28,39
+Mullaitivu,26,2026,3,2,3
+Nuwara Eliya,26,2026,100,85,115
+Polonnaruwa,26,2026,14,11,16
+Puttalam,26,2026,37,31,42
+Ratnapura,26,2026,210,178,241
+Trincomalee,26,2026,24,20,27
+Vavuniya,26,2026,23,19,26
