@@ -7,15 +7,15 @@ import {
 import { useWeather, computeRisk, getRiskColor } from './hooks/useWeather'
 import StatCard from './components/StatCard'
 import SkeletonLoader from './components/SkeletonLoader'
-import RiskBadge from './components/RiskBadge'
 import DistrictTable from './components/DistrictTable'
 import JobLogs from './components/logs/JobLogs'
+import DatasetInputPanel from './components/dengue/DatasetInputPanel'
 import DengueInputPanel from './components/dengue/DengueInputPanel'
 import SriLankaMap from './components/SriLankaMap'
-import {
-  WeatherTrendChart, PredictionChart,
-  PredictionHistoryChart, DistrictTrendChart
-} from './components/WeatherChart'
+import { WeatherTrendChart, PredictionChart, PredictionHistoryChart, DistrictTrendChart, DistrictYearlyComparisonChart } from './components/WeatherChart'
+import { useAuth } from './hooks/useAuth'
+import Login from './components/Login'
+import RiskBadge from './components/RiskBadge'
 
 const TABS = [
   { id: 'overview',    label: 'Overview',    icon: <BarChart2 size={14} /> },
@@ -26,6 +26,7 @@ const TABS = [
 ]
 
 export default function App() {
+  const { user, logout, loading: authLoading } = useAuth()
   const [tab, setTab]               = useState('overview')
   const [dryRun, setDryRun]         = useState(false)
   const [selectedDistrict, setSel]  = useState(null)
@@ -41,6 +42,9 @@ export default function App() {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }
+
+  if (authLoading) return <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}><span className="spinner" /></div>
+  if (!user) return <Login />
 
   const handleWeatherTrigger = async () => {
     try {
@@ -161,7 +165,7 @@ export default function App() {
 
             {/* Nav tabs */}
             <nav style={{ display: 'flex', gap: 2, marginLeft: 12 }}>
-              {TABS.map(t => (
+              {TABS.filter(t => user?.role === 'ADMIN' || t.id !== 'data').map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
@@ -187,40 +191,44 @@ export default function App() {
 
             {/* Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {/* Dry run toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--text-muted)' }}>
-                <label className="toggle">
-                  <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
-                  <span className="toggle-slider" />
-                </label>
-                Dry Run
-              </div>
+              {user?.role === 'ADMIN' && (
+                <>
+                  {/* Dry run toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--text-muted)' }}>
+                    <label className="toggle">
+                      <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
+                      <span className="toggle-slider" />
+                    </label>
+                    Dry Run
+                  </div>
 
-              {/* Weather trigger */}
-              <button
-                className="btn btn-ghost"
-                style={{ fontSize: 12 }}
-                disabled={jobRunning.weather}
-                onClick={handleWeatherTrigger}
-              >
-                {jobRunning.weather
-                  ? <span className="spinner" />
-                  : <CloudRain size={13} />}
-                Fetch Weather
-              </button>
+                  {/* Weather trigger */}
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12 }}
+                    disabled={jobRunning.weather}
+                    onClick={handleWeatherTrigger}
+                  >
+                    {jobRunning.weather
+                      ? <span className="spinner" />
+                      : <CloudRain size={13} />}
+                    Fetch Weather
+                  </button>
 
-              {/* Prediction trigger */}
-              <button
-                className="btn btn-primary"
-                style={{ fontSize: 12 }}
-                disabled={jobRunning.prediction}
-                onClick={handlePredictionTrigger}
-              >
-                {jobRunning.prediction
-                  ? <span className="spinner" />
-                  : <Brain size={13} />}
-                Run Prediction
-              </button>
+                  {/* Prediction trigger */}
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: 12 }}
+                    disabled={jobRunning.prediction}
+                    onClick={handlePredictionTrigger}
+                  >
+                    {jobRunning.prediction
+                      ? <span className="spinner" />
+                      : <Brain size={13} />}
+                    Run Prediction
+                  </button>
+                </>
+              )}
 
               <button
                 className="btn btn-ghost"
@@ -229,6 +237,15 @@ export default function App() {
                 title="Refresh all data"
               >
                 <RefreshCw size={13} />
+              </button>
+
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '8px 10px', color: 'var(--accent-red)' }}
+                onClick={logout}
+                title="Log Out"
+              >
+                Logout
               </button>
             </div>
           </div>
@@ -241,113 +258,114 @@ export default function App() {
         {/* ── OVERVIEW TAB ── */}
         {tab === 'overview' && (
           <div className="fade-up">
-            {/* Stat cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 28 }}>
-              <StatCard
-                label="High Risk Districts"
-                value={loading ? null : riskCounts.HIGH || 0}
-                sub="As of latest fetch"
-                accent="var(--risk-high)"
-                icon={<AlertTriangle size={15} />}
-                loading={loading}
-              />
-              <StatCard
-                label="Medium Risk"
-                value={loading ? null : riskCounts.MEDIUM || 0}
-                sub="WHO thresholds"
-                accent="var(--risk-medium)"
-                icon={<Activity size={15} />}
-                loading={loading}
-              />
-              <StatCard
-                label="Low Risk"
-                value={loading ? null : riskCounts.LOW || 0}
-                sub="Favourable conditions"
-                accent="var(--risk-low)"
-                icon={<CheckCircle2 size={15} />}
-                loading={loading}
-              />
-              <StatCard
-                label="Predicted Cases"
-                value={loading ? null : totalPredicted > 0 ? totalPredicted.toLocaleString() : '—'}
-                sub="National total, next week"
-                accent="var(--accent-blue)"
-                icon={<TrendingUp size={15} />}
-                loading={loading}
-              />
-              <StatCard
-                label="Avg Temperature"
-                value={loading ? null : avgTemp ? `${avgTemp}°C` : '—'}
-                sub="National average"
-                accent="var(--accent-orange)"
-                icon={<Thermometer size={15} />}
-                loading={loading}
-              />
-              <StatCard
-                label="Avg Humidity"
-                value={loading ? null : avgHum ? `${avgHum}%` : '—'}
-                sub="National average"
-                accent="var(--accent-blue)"
-                icon={<Droplets size={15} />}
-                loading={loading}
-              />
+            
+            {/* Top row: Heatmap + Core Stats & History */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20, marginBottom: 24 }}>
+              
+              {/* Main Feature: Prediction Heatmap */}
+              <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ marginBottom: 14 }}>
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--accent-red)' }}>
+                    Dengue Outbreak Heatmap
+                  </h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Interactive forecast based on latest ML pipeline execution. Click any district to filter.
+                  </p>
+                </div>
+                <div style={{ flex: 1, minHeight: 450 }}>
+                  <SriLankaMap
+                    predictions={predictions}
+                    selectedDistrict={selectedDistrict}
+                    onDistrictClick={name => {
+                      setSel(name === selectedDistrict ? null : name)
+                      setTab('districts')
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Right column: Stats and Prediction History */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Highlight Stats */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <StatCard
+                    label="Predicted Cases"
+                    value={loading ? null : totalPredicted > 0 ? totalPredicted.toLocaleString() : '—'}
+                    sub="National total, next week"
+                    accent="var(--accent-red)"
+                    icon={<AlertTriangle size={15} />}
+                    loading={loading}
+                  />
+                  <StatCard
+                    label="Highest Risk"
+                    value={loading ? null : predictions.length > 0 ? predictions.sort((a,b)=>b.predicted_cases-a.predicted_cases)[0].district : '—'}
+                    sub="Predicted peak district"
+                    accent="var(--accent-orange)"
+                    icon={<TrendingUp size={15} />}
+                    loading={loading}
+                  />
+                  <StatCard
+                    label="Avg Temperature"
+                    value={loading ? null : avgTemp ? `${avgTemp}°C` : '—'}
+                    sub="National average"
+                    accent="var(--accent-blue)"
+                    icon={<Thermometer size={15} />}
+                    loading={loading}
+                  />
+                  <StatCard
+                    label="Avg Rainfall"
+                    value={loading ? null : (weatherData.reduce((s, r) => s + parseFloat(r.precipitation || 0), 0) / (weatherData.length || 1)).toFixed(1) + 'mm'}
+                    sub="National average"
+                    accent="var(--accent-blue)"
+                    icon={<CloudRain size={15} />}
+                    loading={loading}
+                  />
+                </div>
+
+                {/* Prediction History Chart */}
+                <div className="card" style={{ padding: 20, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15 }}>Outbreak Trajectory</h3>
+                    <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>National Historical Forecasts</p>
+                  </div>
+                  {loading ? <div className="skeleton" style={{ flex: 1, minHeight: 200 }} /> : (
+                    <div style={{ flex: 1, minHeight: 200 }}>
+                      <PredictionHistoryChart allPredictions={allPredictions} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
 
-            {/* Charts row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            {/* Secondary row: Weather Context */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
               <div className="card" style={{ padding: 20 }}>
                 <div style={{ marginBottom: 14 }}>
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>Temperature & Humidity Trend</h3>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>National weekly averages</p>
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>Temperature & Humidity Context</h3>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Supporting meteorological data</p>
                 </div>
-                {loading ? <div className="skeleton" style={{ height: 220 }} /> : (
+                {loading ? <div className="skeleton" style={{ height: 180 }} /> : (
                   <WeatherTrendChart data={weeklyAverages} metrics={['avg_temp','humidity']} />
                 )}
               </div>
 
               <div className="card" style={{ padding: 20 }}>
                 <div style={{ marginBottom: 14 }}>
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>Rainfall & Wind Trend</h3>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>National weekly averages</p>
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>Rainfall & Wind Context</h3>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Supporting meteorological data</p>
                 </div>
-                {loading ? <div className="skeleton" style={{ height: 220 }} /> : (
+                {loading ? <div className="skeleton" style={{ height: 180 }} /> : (
                   <WeatherTrendChart data={weeklyAverages} metrics={['precipitation','wind_speed']} />
                 )}
               </div>
             </div>
 
-            {/* Prediction history + map */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16 }}>
-              <div className="card" style={{ padding: 20 }}>
-                <div style={{ marginBottom: 14 }}>
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>Total Predicted Cases — History</h3>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Sum across all 25 districts per week</p>
-                </div>
-                {loading ? <div className="skeleton" style={{ height: 180 }} /> : (
-                  <PredictionHistoryChart allPredictions={allPredictions} />
-                )}
-              </div>
-
-              <div className="card" style={{ padding: 20 }}>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Risk Map</h3>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>Click district to select</p>
-                <SriLankaMap
-                  weatherData={weatherData}
-                  predictions={predictions}
-                  selectedDistrict={selectedDistrict}
-                  onDistrictClick={name => {
-                    setSel(name === selectedDistrict ? null : name)
-                    setTab('districts')
-                  }}
-                />
-              </div>
-            </div>
-
             {/* Recent logs strip */}
             {logs.length > 0 && (
-              <div style={{ marginTop: 16 }} className="card" style={{ padding: 16, marginTop: 16 }}>
+              <div className="card" style={{ padding: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <h4 style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>RECENT JOBS</h4>
+                  <h4 style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>PIPELINE LOGS</h4>
                   <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setTab('logs')}>
                     View all →
                   </button>
@@ -402,140 +420,220 @@ export default function App() {
               </div>
             </div>
 
-            {/* Top district prediction cards */}
-            {predictions.length > 0 && (
-              <>
-                <h4 style={{ fontSize: 11, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>
-                  Top Districts by Predicted Cases
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10, marginBottom: 28 }}>
-                  {predictions
-                    .slice()
-                    .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
-                    .slice(0, 6)
-                    .map(p => {
-                      const weather = latestWeather[p.district]
-                      const { level } = weather ? computeRisk(weather) : { level: 'LOW' }
-                      return (
-                        <div
-                          key={p.district}
-                          className="card"
-                          style={{ padding: 16, cursor: 'pointer' }}
-                          onClick={() => { setSel(p.district); setTab('districts') }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                            <p style={{ fontSize: 13, fontWeight: 600 }}>{p.district}</p>
-                            <RiskBadge level={level} />
-                          </div>
-                          <p style={{
-                            fontFamily: 'var(--font-display)',
-                            fontWeight: 800, fontSize: 28,
-                            color: getRiskColor(level),
-                            lineHeight: 1
-                          }}>
-                            {p.predicted_cases}
-                          </p>
-                          <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                            predicted cases
-                          </p>
-                          {p.confidence_low != null && (
-                            <p style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                              CI: [{p.confidence_low} – {p.confidence_high}]
-                            </p>
-                          )}
+            {/* Main Layout: Sidebar + Chart */}
+            <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 24, alignItems: 'start', minHeight: 'calc(100vh - 200px)' }}>
+              
+              {/* Sidebar */}
+              <div className="card" style={{ padding: '16px 0', height: '100%', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+                <div style={{ padding: '0 16px', marginBottom: 16 }}>
+                  <h4 style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    Districts
+                  </h4>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <button
+                    onClick={() => setSel(null)}
+                    style={{
+                      textAlign: 'left', padding: '10px 16px',
+                      border: 'none', borderLeft: selectedDistrict === null ? '3px solid var(--accent-blue)' : '3px solid transparent',
+                      color: selectedDistrict === null ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      background: selectedDistrict === null ? 'rgba(59,130,246,0.05)' : 'transparent',
+                      fontWeight: selectedDistrict === null ? 600 : 400,
+                      fontSize: 13, cursor: 'pointer', transition: 'all 0.15s'
+                    }}
+                  >
+                    📊 National Overview
+                  </button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '8px 16px' }} />
+                  {Array.from(new Set([...dengueCounts.map(d => d.district), ...allPredictions.map(p => p.district)]))
+                    .filter(Boolean)
+                    .sort()
+                    .map(d => (
+                      <button
+                        key={d}
+                        onClick={() => setSel(d)}
+                        style={{
+                          textAlign: 'left', padding: '10px 16px',
+                          border: 'none', borderLeft: selectedDistrict === d ? '3px solid var(--accent-blue)' : '3px solid transparent',
+                          color: selectedDistrict === d ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          background: selectedDistrict === d ? 'rgba(59,130,246,0.05)' : 'transparent',
+                          fontWeight: selectedDistrict === d ? 600 : 400,
+                          fontSize: 13, cursor: 'pointer', transition: 'all 0.15s'
+                        }}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* Main Chart Area */}
+              <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {selectedDistrict ? (
+                  <div className="card" style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ marginBottom: 20 }}>
+                      <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18 }}>
+                        {selectedDistrict} - Daily Trend Comparisons
+                      </h3>
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Historical actual cases vs current forecast models
+                      </p>
+                    </div>
+                    
+                    <div style={{ flex: 1, minHeight: 400 }}>
+                      {loading ? (
+                        <SkeletonLoader rows={1} cols={1} />
+                      ) : (
+                        <DistrictYearlyComparisonChart 
+                          district={selectedDistrict} 
+                          dengueCounts={dengueCounts} 
+                          allPredictions={allPredictions} 
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Top district prediction cards */}
+                    {predictions.length > 0 && (
+                      <>
+                        <h4 style={{ fontSize: 11, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>
+                          Top Districts by Predicted Cases
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10, marginBottom: 28 }}>
+                          {predictions
+                            .slice()
+                            .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
+                            .slice(0, 4)
+                            .map(p => {
+                              const cases = parseInt(p.predicted_cases) || 0;
+                              const severityColor = cases > 200 ? 'var(--risk-high)' : cases > 50 ? 'var(--risk-medium)' : 'var(--risk-low)';
+                              
+                              return (
+                                <div
+                                  key={p.district}
+                                  className="card"
+                                  style={{ padding: 16, cursor: 'pointer' }}
+                                  onClick={() => setSel(p.district)}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                                    <p style={{ fontSize: 13, fontWeight: 600 }}>{p.district}</p>
+                                  </div>
+                                  <p style={{
+                                    fontFamily: 'var(--font-display)',
+                                    fontWeight: 800, fontSize: 28,
+                                    color: severityColor,
+                                    lineHeight: 1
+                                  }}>
+                                    {p.predicted_cases}
+                                  </p>
+                                  <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    predicted cases
+                                  </p>
+                                  {p.confidence_low != null && (
+                                    <p style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                                      CI: [{p.confidence_low} – {p.confidence_high}]
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            })}
                         </div>
-                      )
-                    })}
-                </div>
-              </>
-            )}
+                      </>
+                    )}
 
-            {/* Bar chart */}
-            <div className="card" style={{ padding: 20, marginBottom: 20 }}>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                All Districts — Predicted vs Reported
-              </h3>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
-                Top 15 by predicted case count
-                {dengueCounts.length > 0 && ' · Yellow bars show reported cases where available'}
-              </p>
-              {loading
-                ? <div className="skeleton" style={{ height: 280 }} />
-                : <PredictionChart predictions={predictions} dengue={dengueCounts} />}
+                    {/* Bar chart */}
+                    <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+                      <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                        All Districts — Predicted vs Reported
+                      </h3>
+                      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+                        Top 15 by predicted case count
+                        {dengueCounts.length > 0 && ' · Yellow bars show reported cases where available'}
+                      </p>
+                      {loading
+                        ? <div className="skeleton" style={{ height: 280 }} />
+                        : <PredictionChart predictions={predictions} dengue={dengueCounts} />}
+                    </div>
+
+                    {/* All predictions table */}
+                    {predictions.length > 0 && (
+                      <div className="card" style={{ padding: 20 }}>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
+                          All 25 Districts
+                        </h3>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>District</th>
+                                <th>Predicted Cases</th>
+                                <th>Confidence Interval</th>
+                                <th>Reported Cases</th>
+                                <th>Week</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {predictions
+                                .slice()
+                                .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
+                                .map(p => {
+                                  const cases = parseInt(p.predicted_cases) || 0;
+                                  const severityColor = cases > 200 ? 'var(--risk-high)' : cases > 50 ? 'var(--risk-medium)' : 'var(--risk-low)';
+                                  const reported = dengueCounts.find(d => d.district === p.district)
+                                  return (
+                                    <tr key={p.district} style={{ cursor: 'pointer' }}
+                                      onClick={() => setSel(p.district)}>
+                                      <td style={{ fontWeight: 500 }}>{p.district}</td>
+                                      <td>
+                                        <span style={{
+                                          fontFamily: 'var(--font-mono)', fontWeight: 700,
+                                          color: severityColor, fontSize: 14
+                                        }}>
+                                          {p.predicted_cases}
+                                        </span>
+                                      </td>
+                                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                                        {p.confidence_low != null ? `[${p.confidence_low} – ${p.confidence_high}]` : '—'}
+                                      </td>
+                                      <td style={{ fontFamily: 'var(--font-mono)', color: '#eab308' }}>
+                                        {reported ? reported.cases : '—'}
+                                      </td>
+                                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                                        W{String(p.predicted_week).padStart(2,'0')} {p.predicted_year}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {!loading && !predictions.length && (
+                      <div style={{
+                        textAlign: 'center', padding: 64,
+                        border: '1px dashed var(--border)', borderRadius: 12
+                      }}>
+                        <Brain size={40} style={{ color: 'var(--text-muted)', marginBottom: 16 }} />
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 8 }}>No predictions yet</h3>
+                        <p style={{ color: 'var(--text-muted)', marginBottom: 20, fontSize: 13 }}>
+                          Make sure weather data exists, then click Run Prediction to generate forecasts.
+                        </p>
+                        {user?.role === 'ADMIN' && (
+                          <button className="btn btn-primary" onClick={handlePredictionTrigger}>
+                            <Brain size={14} /> Run Prediction Now
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
-
-            {/* All predictions table */}
-            {predictions.length > 0 && (
-              <div className="card" style={{ padding: 20 }}>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
-                  All 25 Districts
-                </h3>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>District</th>
-                        <th>Predicted Cases</th>
-                        <th>Confidence Interval</th>
-                        <th>Weather Risk</th>
-                        <th>Reported Cases</th>
-                        <th>Week</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {predictions
-                        .slice()
-                        .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
-                        .map(p => {
-                          const weather = latestWeather[p.district]
-                          const { level } = weather ? computeRisk(weather) : { level: 'LOW' }
-                          const reported = dengueCounts.find(d => d.district === p.district)
-                          return (
-                            <tr key={p.district} style={{ cursor: 'pointer' }}
-                              onClick={() => { setSel(p.district); setTab('districts') }}>
-                              <td style={{ fontWeight: 500 }}>{p.district}</td>
-                              <td>
-                                <span style={{
-                                  fontFamily: 'var(--font-mono)', fontWeight: 700,
-                                  color: getRiskColor(level), fontSize: 14
-                                }}>
-                                  {p.predicted_cases}
-                                </span>
-                              </td>
-                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                                {p.confidence_low != null ? `[${p.confidence_low} – ${p.confidence_high}]` : '—'}
-                              </td>
-                              <td><RiskBadge level={level} /></td>
-                              <td style={{ fontFamily: 'var(--font-mono)', color: '#eab308' }}>
-                                {reported ? reported.cases : '—'}
-                              </td>
-                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                                W{String(p.predicted_week).padStart(2,'0')} {p.predicted_year}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {!loading && !predictions.length && (
-              <div style={{
-                textAlign: 'center', padding: 64,
-                border: '1px dashed var(--border)', borderRadius: 12
-              }}>
-                <Brain size={40} style={{ color: 'var(--text-muted)', marginBottom: 16 }} />
-                <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 8 }}>No predictions yet</h3>
-                <p style={{ color: 'var(--text-muted)', marginBottom: 20, fontSize: 13 }}>
-                  Make sure weather data exists, then click Run Prediction to generate forecasts.
-                </p>
-                <button className="btn btn-primary" onClick={handlePredictionTrigger}>
-                  <Brain size={14} /> Run Prediction Now
-                </button>
-              </div>
-            )}
           </div>
         )}
 
@@ -547,7 +645,7 @@ export default function App() {
               <div>
                 <div style={{ marginBottom: 20 }}>
                   <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>
-                    District Analysis
+                    District Outbreak Details
                   </h2>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                     {latestRows.length} districts with weather data · click a row to inspect
@@ -578,26 +676,6 @@ export default function App() {
                       <button className="btn btn-ghost" style={{ padding: '5px 8px' }} onClick={() => setSel(null)}>✕</button>
                     </div>
 
-                    {/* Weather grid */}
-                    {selectedWeather && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-                        {[
-                          { label: 'Avg Temp', value: `${parseFloat(selectedWeather.avg_temp).toFixed(1)}°C`, icon: '🌡', color: '#f97316' },
-                          { label: 'Humidity', value: `${parseFloat(selectedWeather.humidity).toFixed(1)}%`, icon: '💧', color: '#3b82f6' },
-                          { label: 'Rainfall', value: `${parseFloat(selectedWeather.precipitation).toFixed(1)}mm`, icon: '🌧', color: '#14b8a6' },
-                          { label: 'Wind', value: `${parseFloat(selectedWeather.wind_speed).toFixed(1)} km/h`, icon: '💨', color: '#a855f7' },
-                        ].map(item => (
-                          <div key={item.label} style={{
-                            background: 'var(--bg-elevated)', borderRadius: 8, padding: '10px 12px',
-                            border: '1px solid var(--border)'
-                          }}>
-                            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{item.icon} {item.label}</p>
-                            <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 16, color: item.color }}>{item.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
                     {/* Predicted cases */}
                     {selectedPred && (
                       <div style={{
@@ -619,6 +697,29 @@ export default function App() {
                             95% CI: [{selectedPred.confidence_low} – {selectedPred.confidence_high}]
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {/* Supporting Weather Data */}
+                    {selectedWeather && (
+                      <div>
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Supporting Meteorological Data</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                          {[
+                            { label: 'Avg Temp', value: `${parseFloat(selectedWeather.avg_temp).toFixed(1)}°C`, icon: '🌡', color: '#f97316' },
+                            { label: 'Humidity', value: `${parseFloat(selectedWeather.humidity).toFixed(1)}%`, icon: '💧', color: '#3b82f6' },
+                            { label: 'Rainfall', value: `${parseFloat(selectedWeather.precipitation).toFixed(1)}mm`, icon: '🌧', color: '#14b8a6' },
+                            { label: 'Wind', value: `${parseFloat(selectedWeather.wind_speed).toFixed(1)} km/h`, icon: '💨', color: '#a855f7' },
+                          ].map(item => (
+                            <div key={item.label} style={{
+                              background: 'var(--bg-elevated)', borderRadius: 8, padding: '10px 12px',
+                              border: '1px solid var(--border)'
+                            }}>
+                              <p style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{item.icon} {item.label}</p>
+                              <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 16, color: item.color }}>{item.value}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -657,21 +758,24 @@ export default function App() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
-              <DengueInputPanel
-                dengueCounts={dengueCounts}
-                onUpload={uploadDengue}
-                onSave={saveDengue}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <DatasetInputPanel />
+                <DengueInputPanel
+                  dengueCounts={dengueCounts}
+                  onUpload={uploadDengue}
+                  onSave={saveDengue}
+                />
+              </div>
 
               {/* Info panel */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="card" style={{ padding: 18 }}>
-                  <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>📊 Model Input Requirements</h4>
+                  <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>📊 DB Table Schema Requirements</h4>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-                    <p>The model uses <strong style={{ color: 'var(--text-primary)' }}>4 weeks lookback</strong> for both weather and dengue counts.</p>
+                    <p>The system stores weather and cases historically to train the model.</p>
                     <br />
                     <p style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-                      Input shape: [25 districts × (4 weeks × 5 weather features + 4 dengue counts)] = 24 features
+                      Supports upsert. If the Year, Week, and District already exist, the metrics will be updated.
                     </p>
                   </div>
                 </div>
@@ -683,12 +787,13 @@ export default function App() {
                     borderRadius: 6, padding: '10px 12px',
                     fontFamily: 'var(--font-mono)', fontSize: 11,
                     color: 'var(--text-secondary)',
-                    lineHeight: 2
+                    lineHeight: 2,
+                    overflowX: 'auto',
+                    whiteSpace: 'nowrap'
                   }}>
-                    <p style={{ color: 'var(--accent-green)' }}>district,week,year,cases</p>
-                    <p>Colombo,22,2025,47</p>
-                    <p>Gampaha,22,2025,31</p>
-                    <p>Kandy,22,2025,28</p>
+                    <p style={{ color: 'var(--accent-green)' }}>Year,Week,District,Avg_Temp,Avg_Humidity,Total_Rainfall,Avg_Windspeed,Dengue_Cases</p>
+                    <p>2020,1,Ampara,27.08,84.24,22.05,14.06,120</p>
+                    <p>2020,2,Ampara,26.14,80.38,48.57,20.82,105</p>
                     <p style={{ color: 'var(--text-muted)' }}>…</p>
                   </div>
                 </div>

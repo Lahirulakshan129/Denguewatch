@@ -12,3 +12,5 @@ export default function RiskBadge({ level, score }) {
     </span>
   )
 }
+
+export { RiskBadge }

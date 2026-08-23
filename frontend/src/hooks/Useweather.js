@@ -86,11 +86,10 @@ export function useWeather() {
   }
 }
 
-// Risk score computation (WHO thresholds)
 export function computeRisk(row) {
   let score = 0
   const temp  = parseFloat(row.avg_temp)
-  const hum   = parseFloat(row.humidity)
+  const hum   = parseFloat(row.humidity ?? row.avg_humidity)
   const rain  = parseFloat(row.precipitation)
 
   if (temp >= 26 && temp <= 32) score += 35; else score += 15

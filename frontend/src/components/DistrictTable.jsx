@@ -1,9 +1,7 @@
 import { useState, useMemo } from 'react'
-import RiskBadge from './RiskBadge'
-import { computeRisk } from '../hooks/useWeather'
 
 export default function DistrictTable({ weatherData, predictions, dengue, onDistrictClick }) {
-  const [sort, setSort]       = useState({ col: 'risk', dir: 'desc' })
+  const [sort, setSort]       = useState({ col: 'predicted_cases', dir: 'desc' })
   const [filter, setFilter]   = useState('')
   const [riskFilter, setRisk] = useState('ALL')
 
@@ -32,7 +30,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
     })
 
     return Object.entries(latestWeather).map(([district, w]) => {
-      const { score, level } = computeRisk(w)
       const pred = predMap[district]
       const act = dengueMap[district]
       return {
@@ -43,8 +40,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
         humidity: parseFloat(w.humidity) || 0,
         precipitation: parseFloat(w.precipitation) || 0,
         wind_speed: parseFloat(w.wind_speed) || 0,
-        risk_score: score,
-        risk_level: level,
         predicted_cases: pred ? parseInt(pred.predicted_cases) : null,
         confidence_low: pred ? parseInt(pred.confidence_low) : null,
         confidence_high: pred ? parseInt(pred.confidence_high) : null,
@@ -89,23 +84,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
           onChange={e => setFilter(e.target.value)}
           style={{ width: 200 }}
         />
-        <div style={{ display: 'flex', gap: 6 }}>
-          {['ALL','HIGH','MEDIUM','LOW'].map(r => (
-            <button
-              key={r}
-              className={`btn ${riskFilter === r ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ padding: '5px 12px', fontSize: 11 }}
-              onClick={() => setRisk(r)}
-            >
-              {r}
-              {r !== 'ALL' && (
-                <span style={{ marginLeft: 4, opacity: 0.7 }}>
-                  {r === 'HIGH' ? high : r === 'MEDIUM' ? medium : low}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div style={{ overflowX: 'auto' }}>
@@ -113,7 +91,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
           <thead>
             <tr>
               <th onClick={() => toggleSort('district')}>District <SortIcon col="district" /></th>
-              <th onClick={() => toggleSort('risk_score')}>Risk <SortIcon col="risk_score" /></th>
               <th onClick={() => toggleSort('avg_temp')}>Temp °C <SortIcon col="avg_temp" /></th>
               <th onClick={() => toggleSort('humidity')}>Humidity % <SortIcon col="humidity" /></th>
               <th onClick={() => toggleSort('precipitation')}>Rain mm <SortIcon col="precipitation" /></th>
@@ -134,7 +111,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
                     {row.district}
                   </span>
                 </td>
-                <td><RiskBadge level={row.risk_level} score={row.risk_score} /></td>
                 <td>
                   <span style={{ fontFamily: 'var(--font-mono)', color: getTempColor(row.avg_temp) }}>
                     {row.avg_temp.toFixed(1)}

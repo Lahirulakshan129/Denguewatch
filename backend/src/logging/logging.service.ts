@@ -1,31 +1,73 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
+import * as path from 'path';
+
+export interface JobLog {
+  id: string;
+  type: 'weather' | 'prediction' | 'dengue_upload';
+  status: 'running' | 'success' | 'failed';
+  startedAt: string;
+  finishedAt?: string;
+  durationMs?: number;
+  dryRun: boolean;
+  result?: any;
+  error?: string;
+}
 
 @Injectable()
 export class LoggingService {
+  private readonly logger = new Logger(LoggingService.name);
+  private logsPath: string;
 
-  private logFile = './logs/job-history.json';
-
-  log(entry: any) {
-    let logs = [];
-
-    if (fs.existsSync(this.logFile)) {
-      const file = fs.readFileSync(this.logFile, 'utf-8');
-      logs = JSON.parse(file || '[]');
-    }
-
-    logs.push({
-      ...entry,
-      timestamp: new Date().toISOString(),
-    });
-
-    fs.writeFileSync(this.logFile, JSON.stringify(logs, null, 2));
+  constructor(private config: ConfigService) {
+    this.logsPath = this.config.get('paths.logsPath');
+    const dir = path.dirname(this.logsPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   }
 
-  getLogs(limit = 20) {
-    if (!fs.existsSync(this.logFile)) return [];
+  getLogs(limit = 50): JobLog[] {
+    if (!fs.existsSync(this.logsPath)) return [];
+    try {
+      const raw = fs.readFileSync(this.logsPath, 'utf-8');
+      const logs: JobLog[] = JSON.parse(raw);
+      return logs.slice(-limit).reverse();
+    } catch {
+      return [];
+    }
+  }
 
-    const logs = JSON.parse(fs.readFileSync(this.logFile, 'utf-8'));
-    return logs.slice(-limit).reverse();
+  appendLog(log: JobLog): void {
+    const logs = this.getLogs(500).reverse();
+    logs.push(log);
+    fs.writeFileSync(this.logsPath, JSON.stringify(logs.slice(-500), null, 2));
+  }
+
+  createLog(type: JobLog['type'], dryRun: boolean): JobLog {
+    const log: JobLog = {
+      id: `${type}_${Date.now()}`,
+      type,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      dryRun,
+    };
+    this.appendLog(log);
+    return log;
+  }
+
+  finalizeLog(log: JobLog, success: boolean, result?: any, error?: string): JobLog {
+    const finished = new Date();
+    const started = new Date(log.startedAt);
+    log.status = success ? 'success' : 'failed';
+    log.finishedAt = finished.toISOString();
+    log.durationMs = finished.getTime() - started.getTime();
+    if (result) log.result = result;
+    if (error) log.error = error;
+    const allLogs = this.getLogs(500).reverse();
+    const idx = allLogs.findIndex(l => l.id === log.id);
+    if (idx >= 0) allLogs[idx] = log;
+    else allLogs.push(log);
+    fs.writeFileSync(this.logsPath, JSON.stringify(allLogs.slice(-500), null, 2));
+    return log;
   }
 }

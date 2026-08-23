@@ -199,3 +199,81 @@ function EmptyChart({ message }) {
     </div>
   )
 }
+
+export function DistrictYearlyComparisonChart({ district, dengueCounts, allPredictions }) {
+  if (!district) return <EmptyChart message="Select a district from the sidebar" />
+  
+  // X-axis: Weeks 1 to 52
+  const weeks = Array.from({ length: 52 }, (_, i) => i + 1)
+  
+  // Organize data: { week: 1, '2022': 500, '2023': 600, '2026 Forecasted': 300 }
+  const dataMap = {}
+  weeks.forEach(w => {
+    dataMap[w] = { week: `Week ${w}` }
+  })
+  
+  const years = new Set()
+  
+  // Historical Actuals
+  if (dengueCounts) {
+    dengueCounts.filter(r => r.district === district).forEach(r => {
+      const w = parseInt(r.week)
+      const y = r.year
+      if (dataMap[w]) {
+        dataMap[w][y] = parseInt(r.cases) || 0
+        years.add(y)
+      }
+    })
+  }
+  
+  // Forecasted
+  let forecastYear = null
+  if (allPredictions) {
+    allPredictions.filter(r => r.district === district).forEach(r => {
+      const w = parseInt(r.predicted_week)
+      const y = r.predicted_year
+      forecastYear = y
+      const key = `${y} Forecasted`
+      if (dataMap[w]) {
+        dataMap[w][key] = parseInt(r.predicted_cases) || 0
+        years.add(key)
+      }
+    })
+  }
+  
+  const chartData = Object.values(dataMap)
+  const sortedYears = Array.from(years).sort()
+  
+  const YEAR_COLORS = [
+    '#3b82f6', // 2022 blue
+    '#10b981', // 2023 green
+    '#f59e0b', // 2024 yellow
+    '#ef4444', // 2025 red
+    '#8b5cf6', // 2026 purple
+    '#64748b'  // forecasted gray
+  ]
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="week" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={20} />
+        <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <Tooltip content={<CustomTooltip />} />
+        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+        {sortedYears.map((year, i) => (
+          <Line 
+            key={year} 
+            type="monotone" 
+            dataKey={year} 
+            stroke={String(year).includes('Forecasted') ? '#64748b' : YEAR_COLORS[i % YEAR_COLORS.length]} 
+            strokeWidth={String(year).includes('Forecasted') ? 2 : 1.5}
+            strokeDasharray={String(year).includes('Forecasted') ? '5 5' : '0'}
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}

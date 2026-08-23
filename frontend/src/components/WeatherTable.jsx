@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiskBadge } from './RiskBadge.jsx';
+import RiskBadge from './RiskBadge.jsx';
 
 const conditionIcon = {
     'Sunny': '☀️',

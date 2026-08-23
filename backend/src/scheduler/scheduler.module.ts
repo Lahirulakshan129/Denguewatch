@@ -5,5 +5,6 @@ import { WeatherJobModule } from '../weather-job/weather-job.module';
 @Module({
   imports: [WeatherJobModule],
   providers: [SchedulerService],
+  exports: [SchedulerService],
 })
 export class SchedulerModule {}
