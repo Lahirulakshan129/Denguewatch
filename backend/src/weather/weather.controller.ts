@@ -14,6 +14,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DatasetRecord } from '../dataset/dataset.entity';
 import { DatasetService } from '../dataset/dataset.service';
+import 'multer';
 
 @Controller()
 export class WeatherController {

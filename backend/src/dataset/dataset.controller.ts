@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { DatasetRecord } from './dataset.entity';
 import { DatasetService } from './dataset.service';
 import { Response } from 'express';
+import 'multer';
 
 @Controller('dataset')
 export class DatasetController {
