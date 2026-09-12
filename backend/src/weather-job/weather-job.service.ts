@@ -26,12 +26,6 @@ export class WeatherJobService implements OnModuleInit {
   async onModuleInit() {
     try {
       await this.dataset.importAllCsvs();
-      const stats = await this.dataset.getWeatherStats();
-      // Only auto-backfill Open-Meteo when there is no research history yet.
-      if (stats.rows < 100 || stats.weeks < 4) {
-        this.logger.log(`Only ${stats.rows} rows / ${stats.weeks} week(s) in DB. Backfilling 4 weeks in the background.`);
-        void this.backfillWeeks(4, false).catch((err) => this.logger.error(err.message));
-      }
     } catch (err) {
       this.logger.error(`History bootstrap failed: ${err.message}`);
     }
@@ -92,13 +86,43 @@ export class WeatherJobService implements OnModuleInit {
   async runPrediction(dryRun = false): Promise<any> {
     const log = this.logging.createLog('prediction', dryRun);
     try {
-      const records = await this.datasetRepo.find({
+      // The ML model needs 12 weeks of data (8 timesteps + 4 for rolling means)
+      const REQUIRED_WEEKS = 12;
+      const periods = lastNCompleteIsoWeeks(REQUIRED_WEEKS);
+
+      // 1. Check availability for each required week and backfill if missing
+      for (const period of periods) {
+        const count = await this.datasetRepo.count({ where: { year: period.year, week: period.week } });
+        if (count < Object.keys(DISTRICTS).length && !dryRun) {
+          this.logger.log(`Missing data for W${period.week}/${period.year}. Fetching missing weather...`);
+          for (const [district, [lat, lon]] of Object.entries(DISTRICTS)) {
+            try {
+              const metrics = await this.fetchOpenMeteo(lat, lon, period.start, period.end);
+              await this.dataset.upsertRow({
+                year: period.year,
+                week: period.week,
+                district,
+                avg_temp: metrics.avg_temp,
+                avg_humidity: metrics.avg_humidity,
+                total_rainfall: metrics.total_rainfall,
+                avg_windspeed: metrics.avg_windspeed,
+              });
+            } catch (err) {
+              this.logger.warn(`Failed to fetch ${district} W${period.week}: ${err.message}`);
+            }
+          }
+        }
+      }
+
+      // 2. Fetch all records, but filter to ONLY the required window (no need to send 8000+ rows)
+      let records = await this.datasetRepo.find({
         order: { year: 'ASC', week: 'ASC', district: 'ASC' },
       });
+      const periodKeys = new Set(periods.map((p) => `${p.year}-${p.week}`));
+      records = records.filter((r) => periodKeys.has(`${r.year}-${r.week}`));
+
       if (!records.length) {
-        throw new BadRequestException(
-          'No weather or case rows in the database. Fetch weather or upload a training CSV first.',
-        );
+        throw new BadRequestException('No weather or case rows in the database for the required window.');
       }
 
       const payload = {

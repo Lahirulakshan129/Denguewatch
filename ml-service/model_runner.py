@@ -44,9 +44,14 @@ def load_artifacts():
 
 
 def next_week(year: int, week: int):
-    if week >= 52:
-        return year + 1, 1
-    return year, week + 1
+    """Return (year, week) for the ISO week following (year, week).
+    Handles 53-week years correctly via Python date arithmetic."""
+    from datetime import date, timedelta
+    # Build the Monday of the given ISO week
+    d = date.fromisocalendar(year, week, 1)  # Monday = weekday 1
+    d_next = d + timedelta(weeks=1)
+    iso = d_next.isocalendar()
+    return iso[0], iso[1]  # (year, week)
 
 
 def _num(v, default=0.0):
