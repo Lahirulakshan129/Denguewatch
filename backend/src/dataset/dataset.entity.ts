@@ -29,4 +29,19 @@ export class DatasetRecord {
 
   @Column({ type: 'int', nullable: true })
   dengue_cases: number;
+
+  @Column({ type: 'float', nullable: true })
+  max_temp: number;
+
+  @Column({ type: 'float', nullable: true })
+  min_temp: number;
+
+  @Column({ type: 'float', nullable: true })
+  rainy_days: number;
+
+  @Column({ type: 'float', nullable: true })
+  population_density: number;
+
+  @Column({ type: 'int', nullable: true })
+  district_id: number;
 }

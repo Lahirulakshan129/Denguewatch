@@ -30,8 +30,9 @@ export class WeatherController {
   @Post('weather/trigger')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async triggerWeather(@Query('dryRun') dryRun?: string) {
-    return this.weatherJob.runWeatherFetch(dryRun === 'true');
+  async triggerWeather(@Query('dryRun') dryRun?: string, @Query('weeks') weeks?: string) {
+    const n = Math.min(12, Math.max(1, parseInt(weeks || '1', 10) || 1));
+    return this.weatherJob.backfillWeeks(n, dryRun === 'true');
   }
 
   @Get('weather/status')
@@ -111,7 +112,7 @@ export class WeatherController {
 
   @Post('dengue/counts')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.OFFICER)
   async saveDengueCounts(@Body() body: { rows: any[] }) {
     if (!body?.rows?.length) throw new BadRequestException('rows array required');
     
@@ -139,16 +140,19 @@ export class WeatherController {
 
   @Post('dengue/upload')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.OFFICER)
   @UseInterceptors(FileInterceptor('file'))
   async uploadDengueCsv(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded');
     const text = file.buffer.toString('utf-8');
     const lines = text.trim().split('\n');
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const required = ['district','week','year','cases'];
-    const missing = required.filter(h => !headers.includes(h));
-    if (missing.length) throw new BadRequestException(`Missing columns: ${missing.join(', ')}`);
+    const hasCases = headers.includes('cases') || headers.includes('dengue_cases');
+    const required = ['district', 'week', 'year'];
+    const missing = required.filter((h) => !headers.includes(h));
+    if (missing.length || !hasCases) {
+      throw new BadRequestException('CSV needs district, week, year, and cases (or Dengue_Cases)');
+    }
 
     let imported = 0;
     for (let i = 1; i < lines.length; i++) {
@@ -168,7 +172,7 @@ export class WeatherController {
         record.week = parseInt(row.week);
         record.district = row.district;
       }
-      record.dengue_cases = row.cases ? parseInt(row.cases) : 0;
+      record.dengue_cases = parseInt(row.cases ?? row.dengue_cases) || 0;
       await this.datasetRepo.save(record);
       imported++;
     }

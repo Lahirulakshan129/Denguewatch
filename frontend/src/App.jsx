@@ -49,14 +49,20 @@ export default function App() {
   const handleWeatherTrigger = async () => {
     try {
       const r = await runWeatherJob(dryRun)
-      showToast(`Weather fetched: ${r.districts_fetched} districts${dryRun ? ' (dry run)' : ''}`)
+      const weekLabel = r.weeks?.length ? ` across ${r.weeks.length} weeks` : ''
+      showToast(`Weather saved: ${r.districts_fetched} district-weeks${weekLabel}${dryRun ? ' (dry run)' : ''}`)
     } catch (e) { showToast(e.message, 'error') }
   }
 
   const handlePredictionTrigger = async () => {
     try {
       const r = await runPrediction(dryRun)
-      showToast(`Prediction done: ${r.district_count} districts${dryRun ? ' (dry run)' : ''}`)
+      if (dryRun) {
+        showToast('Preview only — forecasts were not saved. Turn off Dry Run, then run again.')
+        return
+      }
+      const note = r.engine === 'keras' ? ' · BiLSTM model' : r.fallback ? ' · fallback (ML host down)' : ''
+      showToast(`Saved next-week forecast for ${r.district_count} districts${note}`)
     } catch (e) { showToast(e.message, 'error') }
   }
 
@@ -82,6 +88,9 @@ export default function App() {
     : null
   const avgHum = latestRows.length
     ? (latestRows.reduce((s, r) => s + (parseFloat(r.humidity) || 0), 0) / latestRows.length).toFixed(1)
+    : null
+  const avgRain = latestRows.length
+    ? (latestRows.reduce((s, r) => s + (parseFloat(r.precipitation) || 0), 0) / latestRows.length).toFixed(1)
     : null
 
   // National average data for trend chart
@@ -165,7 +174,7 @@ export default function App() {
 
             {/* Nav tabs */}
             <nav style={{ display: 'flex', gap: 2, marginLeft: 12 }}>
-              {TABS.filter(t => user?.role === 'ADMIN' || t.id !== 'data').map(t => (
+              {TABS.filter(t => t.id !== 'data' || ['ADMIN', 'OFFICER'].includes(user?.role)).map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
@@ -199,7 +208,7 @@ export default function App() {
                       <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
                       <span className="toggle-slider" />
                     </label>
-                    Dry Run
+                    Dry Run (preview, don’t save)
                   </div>
 
                   {/* Weather trigger */}
@@ -212,7 +221,7 @@ export default function App() {
                     {jobRunning.weather
                       ? <span className="spinner" />
                       : <CloudRain size={13} />}
-                    Fetch Weather
+                    Fetch 4 weeks
                   </button>
 
                   {/* Prediction trigger */}
@@ -290,7 +299,7 @@ export default function App() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <StatCard
                     label="Predicted Cases"
-                    value={loading ? null : totalPredicted > 0 ? totalPredicted.toLocaleString() : '—'}
+                    value={loading ? null : predictions.length ? totalPredicted.toLocaleString() : '—'}
                     sub="National total, next week"
                     accent="var(--accent-red)"
                     icon={<AlertTriangle size={15} />}
@@ -307,15 +316,15 @@ export default function App() {
                   <StatCard
                     label="Avg Temperature"
                     value={loading ? null : avgTemp ? `${avgTemp}°C` : '—'}
-                    sub="National average"
+                    sub="Latest week, national average"
                     accent="var(--accent-blue)"
                     icon={<Thermometer size={15} />}
                     loading={loading}
                   />
                   <StatCard
                     label="Avg Rainfall"
-                    value={loading ? null : (weatherData.reduce((s, r) => s + parseFloat(r.precipitation || 0), 0) / (weatherData.length || 1)).toFixed(1) + 'mm'}
-                    sub="National average"
+                    value={loading ? null : avgRain ? `${avgRain}mm` : '—'}
+                    sub="Latest week, national average"
                     accent="var(--accent-blue)"
                     icon={<CloudRain size={15} />}
                     loading={loading}
@@ -326,7 +335,9 @@ export default function App() {
                 <div className="card" style={{ padding: 20, flex: 1, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ marginBottom: 14 }}>
                     <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15 }}>Outbreak Trajectory</h3>
-                    <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>National Historical Forecasts</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Sum of predicted cases across all 25 districts, by the week being forecasted
+                    </p>
                   </div>
                   {loading ? <div className="skeleton" style={{ flex: 1, minHeight: 200 }} /> : (
                     <div style={{ flex: 1, minHeight: 200 }}>
@@ -409,6 +420,7 @@ export default function App() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
+                {user?.role === 'ADMIN' && (
                 <button
                   className="btn btn-primary"
                   disabled={jobRunning.prediction}
@@ -417,6 +429,7 @@ export default function App() {
                   {jobRunning.prediction ? <span className="spinner" /> : <Brain size={14} />}
                   {jobRunning.prediction ? 'Running…' : 'Run Prediction'}
                 </button>
+                )}
               </div>
             </div>
 

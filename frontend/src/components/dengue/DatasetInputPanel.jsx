@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { Upload, Save, FileText, CheckCircle, AlertCircle, Download } from 'lucide-react'
 import axios from 'axios'
+import { downloadTrainingCsv, downloadWeatherCsv, downloadPredictionsCsv } from '../../api/weatherApi'
 
 export default function DatasetInputPanel() {
   const [file, setFile]           = useState(null)
@@ -36,18 +37,13 @@ export default function DatasetInputPanel() {
     }
   }
 
-  const handleDownload = async () => {
+  const handleDownload = async (kind) => {
     try {
-      const res = await axios.get('/api/dataset/download', { responseType: 'blob' })
-      const url = window.URL.createObjectURL(new Blob([res.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', 'training_dataset.csv')
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
+      if (kind === 'weather') await downloadWeatherCsv()
+      else if (kind === 'predictions') await downloadPredictionsCsv()
+      else await downloadTrainingCsv()
     } catch (e) {
-      setMessage({ type: 'error', text: 'Failed to download dataset' })
+      setMessage({ type: 'error', text: e.message || 'Failed to download CSV' })
     }
   }
 
@@ -62,9 +58,15 @@ export default function DatasetInputPanel() {
             Upload or download the complete historical dataset (weather + dengue cases)
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={handleDownload} style={{ padding: '8px 14px', fontSize: 12, background: 'var(--bg-elevated)' }}>
-            <Download size={14} /> Download CSV
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => handleDownload('training')} style={{ padding: '8px 12px', fontSize: 11, background: 'var(--bg-elevated)' }}>
+            <Download size={14} /> Training CSV
+          </button>
+          <button className="btn" onClick={() => handleDownload('weather')} style={{ padding: '8px 12px', fontSize: 11, background: 'var(--bg-elevated)' }}>
+            <Download size={14} /> Weather
+          </button>
+          <button className="btn" onClick={() => handleDownload('predictions')} style={{ padding: '8px 12px', fontSize: 11, background: 'var(--bg-elevated)' }}>
+            <Download size={14} /> Predictions
           </button>
         </div>
       </div>
