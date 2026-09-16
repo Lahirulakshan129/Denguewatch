@@ -25,9 +25,13 @@ export class WeatherService {
 
   constructor() {
     // Ensure data directory exists
-    const dataDir = path.join(process.cwd(), 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    try {
+      const dataDir = path.join(process.cwd(), 'data');
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not create data directory: ${err.message}`);
     }
   }
 

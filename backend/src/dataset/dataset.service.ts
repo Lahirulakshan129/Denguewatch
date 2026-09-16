@@ -299,12 +299,16 @@ export class DatasetService {
   }
 
   private writeCsv(csvPath: string, headers: string[], rows: any[]) {
-    const dir = path.dirname(csvPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const lines = [headers.join(',')];
-    for (const row of rows) {
-      lines.push(headers.map((h) => row[h] ?? '').join(','));
+    try {
+      const dir = path.dirname(csvPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const lines = [headers.join(',')];
+      for (const row of rows) {
+        lines.push(headers.map((h) => row[h] ?? '').join(','));
+      }
+      fs.writeFileSync(csvPath, lines.join('\n') + '\n');
+    } catch (err: any) {
+      this.logger.warn(`Could not write CSV to ${csvPath}: ${err.message}`);
     }
-    fs.writeFileSync(csvPath, lines.join('\n') + '\n');
   }
 }

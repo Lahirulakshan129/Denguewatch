@@ -22,8 +22,12 @@ export class LoggingService {
 
   constructor(private config: ConfigService) {
     this.logsPath = this.config.get('paths.logsPath');
-    const dir = path.dirname(this.logsPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    try {
+      const dir = path.dirname(this.logsPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch (err: any) {
+      this.logger.warn(`Could not create logs directory: ${err.message}`);
+    }
   }
 
   getLogs(limit = 50): JobLog[] {
@@ -38,9 +42,13 @@ export class LoggingService {
   }
 
   appendLog(log: JobLog): void {
-    const logs = this.getLogs(500).reverse();
-    logs.push(log);
-    fs.writeFileSync(this.logsPath, JSON.stringify(logs.slice(-500), null, 2));
+    try {
+      const logs = this.getLogs(500).reverse();
+      logs.push(log);
+      fs.writeFileSync(this.logsPath, JSON.stringify(logs.slice(-500), null, 2));
+    } catch (err: any) {
+      this.logger.warn(`Could not append log: ${err.message}`);
+    }
   }
 
   createLog(type: JobLog['type'], dryRun: boolean): JobLog {
@@ -63,11 +71,15 @@ export class LoggingService {
     log.durationMs = finished.getTime() - started.getTime();
     if (result) log.result = result;
     if (error) log.error = error;
-    const allLogs = this.getLogs(500).reverse();
-    const idx = allLogs.findIndex(l => l.id === log.id);
-    if (idx >= 0) allLogs[idx] = log;
-    else allLogs.push(log);
-    fs.writeFileSync(this.logsPath, JSON.stringify(allLogs.slice(-500), null, 2));
+    try {
+      const allLogs = this.getLogs(500).reverse();
+      const idx = allLogs.findIndex((l) => l.id === log.id);
+      if (idx >= 0) allLogs[idx] = log;
+      else allLogs.push(log);
+      fs.writeFileSync(this.logsPath, JSON.stringify(allLogs.slice(-500), null, 2));
+    } catch (err: any) {
+      this.logger.warn(`Could not finalize log: ${err.message}`);
+    }
     return log;
   }
 }

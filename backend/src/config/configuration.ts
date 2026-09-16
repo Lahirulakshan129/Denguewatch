@@ -42,11 +42,19 @@ export default () => ({
     serviceUrl: process.env.ML_SERVICE_URL || 'http://localhost:8000',
   },
   paths: {
-    weatherCsv: process.env.WEATHER_CSV_PATH || './data/weekly_weather.csv',
-    dengueCsv: process.env.DENGUE_CSV_PATH || './data/dengue_counts.csv',
-    predictionCsv: process.env.PREDICTION_CSV_PATH || './data/predictions.csv',
+    weatherCsv:
+      process.env.WEATHER_CSV_PATH ||
+      (process.env.VERCEL ? '/tmp/weekly_weather.csv' : './data/weekly_weather.csv'),
+    dengueCsv:
+      process.env.DENGUE_CSV_PATH ||
+      (process.env.VERCEL ? '/tmp/dengue_counts.csv' : './data/dengue_counts.csv'),
+    predictionCsv:
+      process.env.PREDICTION_CSV_PATH ||
+      (process.env.VERCEL ? '/tmp/predictions.csv' : './data/predictions.csv'),
     modelPath: process.env.MODEL_PATH || './scripts/model/dengue_model.h5',
-    logsPath: process.env.LOGS_PATH || './logs/job-history.json',
+    logsPath:
+      process.env.LOGS_PATH ||
+      (process.env.VERCEL ? '/tmp/job-history.json' : './logs/job-history.json'),
   },
   api: {
     visualCrossingKey: process.env.VISUAL_CROSSING_API_KEY || '',
