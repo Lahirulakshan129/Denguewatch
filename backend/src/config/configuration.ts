@@ -18,6 +18,13 @@ export default () => ({
     synchronize: process.env.DB_SYNC
       ? process.env.DB_SYNC === 'true'
       : process.env.NODE_ENV !== 'production',
+    ssl:
+      process.env.DB_SSL === 'true'
+        ? {
+            rejectUnauthorized:
+              process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true',
+          }
+        : false,
   },
   seed: {
     adminEmail: process.env.SEED_ADMIN_EMAIL || 'admin@denguewatch.gov',

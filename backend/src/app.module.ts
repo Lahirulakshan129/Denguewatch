@@ -16,7 +16,12 @@ import { DatasetModule } from './dataset/dataset.module';
     ConfigModule.forRoot({
       load: [configuration],
       isGlobal: true,
-      envFilePath: ['.env.local', '.env'],
+      envFilePath:
+        process.env.ENV_FILE
+          ? [process.env.ENV_FILE]
+          : process.env.NODE_ENV === 'production'
+            ? ['.env.production.local', '.env.production', '.env']
+            : ['.env.development.local', '.env.local', '.env'],
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -29,6 +34,7 @@ import { DatasetModule } from './dataset/dataset.module';
         database: config.get('database.name'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: config.get('database.synchronize'),
+        ssl: config.get('database.ssl'),
       }),
     }),
     AuthModule,
