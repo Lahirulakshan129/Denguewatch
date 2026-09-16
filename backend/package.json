@@ -19,6 +19,8 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/schedule": "^4.0.0",
     "@nestjs/typeorm": "^11.0.3",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
     "axios": "^1.19.0",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
@@ -27,13 +29,12 @@
     "pg": "^8.23.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
-    "typeorm": "^1.1.0",
-    "@types/express": "^5.0.6",
-    "@types/multer": "^2.2.0"
+    "typeorm": "^1.1.0"
   },
   "devDependencies": {
     "@nestjs/testing": "^10.4.22",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.0.0"
   }
 }
