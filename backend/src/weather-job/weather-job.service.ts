@@ -1,13 +1,21 @@
-import { Injectable, Logger, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, BadGatewayException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import axios from 'axios';
 import { LoggingService } from '../logging/logging.service';
 import { DatasetService } from '../dataset/dataset.service';
 import { DatasetRecord } from '../dataset/dataset.entity';
 import { PredictionRecord } from '../prediction/prediction.entity';
-import { DISTRICTS, estimatePredictedCases, lastCompleteIsoWeek, lastNCompleteIsoWeeks, nextIsoWeek } from './districts';
+import { DISTRICTS, calibrateToRecent, lastNCompleteIsoWeeks } from './districts';
+
+/** Nest always needs a POST /predict. Modal function URLs already are that endpoint. */
+function resolvePredictUrl(serviceUrl: string) {
+  const base = (serviceUrl || '').trim().replace(/\/$/, '');
+  if (!base) return '';
+  if (/\/predict$/i.test(base) || /--[a-z0-9-]*predict(\.|$)/i.test(base)) return base;
+  return `${base}/predict`;
+}
 
 @Injectable()
 export class WeatherJobService implements OnModuleInit {
@@ -35,7 +43,7 @@ export class WeatherJobService implements OnModuleInit {
     return this.backfillWeeks(1, dryRun);
   }
 
-  async backfillWeeks(weekCount = 4, dryRun = false): Promise<any> {
+  async backfillWeeks(weekCount = 1, dryRun = false): Promise<any> {
     const log = this.logging.createLog('weather', dryRun);
     const periods = lastNCompleteIsoWeeks(weekCount);
     const errors: string[] = [];
@@ -90,12 +98,23 @@ export class WeatherJobService implements OnModuleInit {
       const REQUIRED_WEEKS = 12;
       const periods = lastNCompleteIsoWeeks(REQUIRED_WEEKS);
 
-      // 1. Check availability for each required week and backfill if missing
+      // 1. Check availability for each required week and backfill ONLY if missing
       for (const period of periods) {
-        const count = await this.datasetRepo.count({ where: { year: period.year, week: period.week } });
-        if (count < Object.keys(DISTRICTS).length && !dryRun) {
-          this.logger.log(`Missing data for W${period.week}/${period.year}. Fetching missing weather...`);
+        const existingForWeek = await this.datasetRepo.find({
+          where: { year: period.year, week: period.week },
+        });
+        const existingDistricts = new Set(
+          existingForWeek
+            .filter((r) => r.avg_temp != null && r.total_rainfall != null)
+            .map((r) => r.district),
+        );
+
+        if (existingDistricts.size < Object.keys(DISTRICTS).length && !dryRun) {
+          this.logger.log(`Missing data for W${period.week}/${period.year} (${existingDistricts.size}/${Object.keys(DISTRICTS).length} districts). Fetching missing weather...`);
           for (const [district, [lat, lon]] of Object.entries(DISTRICTS)) {
+            if (existingDistricts.has(district)) {
+              continue; // Already available in DB
+            }
             try {
               const metrics = await this.fetchOpenMeteo(lat, lon, period.start, period.end);
               await this.dataset.upsertRow({
@@ -125,44 +144,88 @@ export class WeatherJobService implements OnModuleInit {
         throw new BadRequestException('No weather or case rows in the database for the required window.');
       }
 
+      const existingPredictions = await this.predictionRepo.find();
+      const predictionMap = new Map<string, number>();
+      for (const pred of existingPredictions) {
+        predictionMap.set(`${pred.district}-${pred.predicted_year}-${pred.predicted_week}`, pred.predicted_cases);
+      }
+
       const payload = {
         dryRun,
-        records: records.map((r) => ({
-          year: r.year,
-          week: r.week,
-          district: r.district,
-          avg_temp: r.avg_temp,
-          avg_humidity: r.avg_humidity,
-          total_rainfall: r.total_rainfall,
-          avg_windspeed: r.avg_windspeed,
-          dengue_cases: r.dengue_cases,
-          max_temp: r.max_temp,
-          min_temp: r.min_temp,
-          rainy_days: r.rainy_days,
-          population_density: r.population_density,
-          district_id: r.district_id,
-        })),
+        records: records.map((r) => {
+          let dengueCases = r.dengue_cases;
+          // If actual count is not present (null or undefined), use predicted count of that week
+          if (dengueCases === null || dengueCases === undefined) {
+            const predKey = `${r.district}-${r.year}-${r.week}`;
+            if (predictionMap.has(predKey)) {
+              dengueCases = predictionMap.get(predKey)!;
+            }
+          }
+
+          return {
+            year: r.year,
+            week: r.week,
+            district: r.district,
+            avg_temp: r.avg_temp,
+            avg_humidity: r.avg_humidity,
+            total_rainfall: r.total_rainfall,
+            avg_windspeed: r.avg_windspeed,
+            dengue_cases: dengueCases,
+            max_temp: r.max_temp,
+            min_temp: r.min_temp,
+            rainy_days: r.rainy_days,
+            population_density: r.population_density,
+            district_id: r.district_id,
+          };
+        }),
       };
 
       let predictions: any[] = [];
-      let fallback = false;
       let engine = 'unknown';
       const mlUrl = this.config.get<string>('ml.serviceUrl');
 
+      if (!mlUrl) {
+        throw new BadGatewayException('ML_SERVICE_URL is not configured.');
+      }
+
       try {
-        const response = await axios.post(`${mlUrl.replace(/\/$/, '')}/predict`, payload, { timeout: 180000 });
+        const predictUrl = resolvePredictUrl(mlUrl);
+        this.logger.log(`Calling hosted model POST ${predictUrl}`);
+        const response = await axios.post(predictUrl, payload, { timeout: 180000 });
         predictions = response.data?.predictions || [];
         engine = response.data?.engine || 'http';
       } catch (err) {
-        this.logger.warn(`ML host unavailable (${err.message}). Using local fallback.`);
-        predictions = this.localPredict(records);
-        fallback = true;
-        engine = 'fallback';
+        const errorDetail = err.response?.data?.detail || err.response?.data?.message || err.message;
+        this.logger.error(`Hosted ML prediction failed: ${errorDetail}`);
+        throw new BadGatewayException(`Hosted ML service unavailable or failed: ${errorDetail}`);
       }
 
       if (!predictions.length) {
         throw new BadRequestException('Model returned no district predictions.');
       }
+
+      const recentByDistrict = new Map<string, { last?: number; lag1?: number }>();
+      const ordered = [...payload.records].sort((a, b) => a.year - b.year || a.week - b.week);
+      for (const r of ordered) {
+        if (r.dengue_cases == null || !Number.isFinite(Number(r.dengue_cases))) continue;
+        const cur = recentByDistrict.get(r.district) ?? {};
+        cur.lag1 = cur.last;
+        cur.last = Number(r.dengue_cases);
+        recentByDistrict.set(r.district, cur);
+      }
+
+      predictions = predictions.map((p) => {
+        const recent = recentByDistrict.get(p.district);
+        const modelPred = Number(p.model_predicted_cases ?? p.predicted_cases) || 0;
+        const predicted = calibrateToRecent(modelPred, recent?.last, recent?.lag1);
+        const spread = Math.max(2, Math.round(predicted * 0.15));
+        return {
+          ...p,
+          predicted_cases: predicted,
+          confidence_low: Math.max(0, predicted - spread),
+          confidence_high: predicted + spread,
+        };
+      });
 
       if (!dryRun) {
         for (const p of predictions) {
@@ -181,7 +244,7 @@ export class WeatherJobService implements OnModuleInit {
           row.predicted_cases = Number(p.predicted_cases) || 0;
           row.confidence_low = p.confidence_low != null ? Number(p.confidence_low) : null;
           row.confidence_high = p.confidence_high != null ? Number(p.confidence_high) : null;
-          row.fallback = fallback;
+          row.fallback = false;
           await this.predictionRepo.save(row);
         }
         await this.dataset.exportMlCsvs();
@@ -191,7 +254,7 @@ export class WeatherJobService implements OnModuleInit {
         success: true,
         district_count: predictions.length,
         dry_run: dryRun,
-        fallback,
+        fallback: false,
         engine,
         predictions,
       };
@@ -211,6 +274,33 @@ export class WeatherJobService implements OnModuleInit {
   }
 
   async getLatestPredictions() {
+    const latestWeather = await this.datasetRepo.find({
+      where: { avg_temp: MoreThan(0) },
+      order: { year: 'DESC', week: 'DESC' },
+      take: 1,
+    });
+    if (latestWeather.length) {
+      const year = latestWeather[0].year;
+      const week = latestWeather[0].week;
+      const anchored = await this.predictionRepo.find({
+        where: [
+          { predicted_year: LessThan(year) },
+          { predicted_year: year, predicted_week: LessThanOrEqual(week) },
+        ],
+        order: { predicted_year: 'DESC', predicted_week: 'DESC' },
+        take: 1,
+      });
+      if (anchored.length) {
+        return this.predictionRepo.find({
+          where: {
+            predicted_year: anchored[0].predicted_year,
+            predicted_week: anchored[0].predicted_week,
+          },
+          order: { predicted_cases: 'DESC' },
+        });
+      }
+    }
+
     const newest = await this.predictionRepo.find({
       order: { predicted_year: 'DESC', predicted_week: 'DESC', id: 'DESC' },
       take: 1,
@@ -227,34 +317,6 @@ export class WeatherJobService implements OnModuleInit {
 
   async getWeatherStats() {
     return this.dataset.getWeatherStats();
-  }
-
-  private localPredict(records: DatasetRecord[]) {
-    const byDistrict = new Map<string, DatasetRecord[]>();
-    for (const r of records) {
-      const list = byDistrict.get(r.district) || [];
-      list.push(r);
-      byDistrict.set(r.district, list);
-    }
-    const out = [];
-    for (const [district, rows] of byDistrict) {
-      const latest = rows[rows.length - 1];
-      const horizon = nextIsoWeek(latest.year, latest.week);
-      const est = estimatePredictedCases({
-        district,
-        dengue_cases: latest.dengue_cases,
-        avg_temp: latest.avg_temp,
-        avg_humidity: latest.avg_humidity,
-        total_rainfall: latest.total_rainfall,
-      });
-      out.push({
-        district,
-        ...est,
-        predicted_week: horizon.week,
-        predicted_year: horizon.year,
-      });
-    }
-    return out;
   }
 
   private async fetchOpenMeteo(lat: number, lon: number, start: string, end: string) {

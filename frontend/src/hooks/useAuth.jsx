@@ -11,8 +11,13 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('token')
     const savedUser = localStorage.getItem('user')
     if (token && savedUser) {
-      setUser(JSON.parse(savedUser))
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      try {
+        setUser(JSON.parse(savedUser))
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      } catch {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+      }
     }
     setLoading(false)
   }, [])

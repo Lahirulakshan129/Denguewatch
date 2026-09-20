@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import WeekBadge from './WeekBadge'
 
 export default function DistrictTable({ weatherData, predictions, dengue, onDistrictClick }) {
   const [sort, setSort]       = useState({ col: 'predicted_cases', dir: 'desc' })
@@ -9,8 +10,12 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
   const rows = useMemo(() => {
     // Latest weather per district
     const latestWeather = {}
-    weatherData.forEach(r => {
+    ;(weatherData || []).forEach(r => {
       const d = r.district
+      const temp = parseFloat(r.avg_temp)
+      const hum = parseFloat(r.humidity ?? r.avg_humidity)
+      if (r.avg_temp == null || r.avg_temp === '' || !Number.isFinite(temp)) return
+      if (temp === 0 && (!Number.isFinite(hum) || hum === 0)) return
       if (!latestWeather[d]) { latestWeather[d] = r; return }
       const existing = latestWeather[d]
       const newer = parseInt(r.year) > parseInt(existing.year) ||
@@ -20,13 +25,17 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
 
     // Latest prediction per district
     const predMap = {}
-    predictions.forEach(p => { predMap[p.district] = p })
+    ;(predictions || []).forEach(p => { predMap[p.district] = p })
 
     // Latest dengue per district
     const dengueMap = {}
     if (dengue?.length) dengue.forEach(d => {
+      if (d.cases == null || d.cases === '') return
       const curr = dengueMap[d.district]
-      if (!curr || parseInt(d.week) > parseInt(curr.week)) dengueMap[d.district] = d
+      const newer = !curr
+        || parseInt(d.year) > parseInt(curr.year)
+        || (parseInt(d.year) === parseInt(curr.year) && parseInt(d.week) > parseInt(curr.week))
+      if (newer) dengueMap[d.district] = d
     })
 
     const names = new Set([
@@ -41,8 +50,8 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
       const act = dengueMap[district]
       return {
         district,
-        week: w?.week ?? pred?.predicted_week ?? act?.week,
-        year: w?.year ?? pred?.predicted_year ?? act?.year,
+        week: pred?.predicted_week ?? w?.week ?? act?.week,
+        year: pred?.predicted_year ?? w?.year ?? act?.year,
         avg_temp: parseFloat(w?.avg_temp) || 0,
         humidity: parseFloat(w?.humidity) || 0,
         precipitation: parseFloat(w?.precipitation) || 0,
@@ -152,8 +161,8 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
                     ? <span style={{ fontFamily: 'var(--font-mono)', color: '#eab308' }}>{row.reported_cases}</span>
                     : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </td>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                  W{String(row.week).padStart(2,'0')} {row.year}
+                <td>
+                  <WeekBadge week={row.week} year={row.year} compact />
                 </td>
               </tr>
             ))}

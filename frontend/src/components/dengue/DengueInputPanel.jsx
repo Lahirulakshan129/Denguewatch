@@ -1,19 +1,15 @@
-import { useState, useRef } from 'react'
-import { Upload, Save, FileText, Plus, Trash2, AlertCircle, CheckCircle } from 'lucide-react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { Upload, Save, AlertCircle, CheckCircle } from 'lucide-react'
+import WeekBadge from '../WeekBadge'
+import { formatWeekRange, lastCompleteIsoWeek, listRecentIsoWeeks } from '../../utils/dateUtils'
 
 const DISTRICTS = [
-  "Colombo","Gampaha","Kalutara","Kandy","Matale","Nuwara Eliya",
-  "Galle","Matara","Hambantota","Jaffna","Kilinochchi","Mannar",
-  "Vavuniya","Mullaitivu","Batticaloa","Ampara","Trincomalee",
-  "Kurunegala","Puttalam","Anuradhapura","Polonnaruwa","Badulla",
-  "Monaragala","Ratnapura","Kegalle"
+  'Colombo', 'Gampaha', 'Kalutara', 'Kandy', 'Matale', 'Nuwara Eliya',
+  'Galle', 'Matara', 'Hambantota', 'Jaffna', 'Kilinochchi', 'Mannar',
+  'Vavuniya', 'Mullaitivu', 'Batticaloa', 'Ampara', 'Trincomalee',
+  'Kurunegala', 'Puttalam', 'Anuradhapura', 'Polonnaruwa', 'Badulla',
+  'Monaragala', 'Ratnapura', 'Kegalle', 'Kalmunai',
 ]
-
-function getCurrentWeekYear() {
-  const now = new Date()
-  const week = parseInt(now.toISOString().slice(0,4) && String(Math.ceil((((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + new Date(now.getFullYear(), 0, 1).getDay() + 1) / 7)))
-  return { week: isNaN(week) ? 1 : Math.min(week, 52), year: now.getFullYear() }
-}
 
 function parseCSV(text) {
   const lines = text.trim().split('\n')
@@ -26,28 +22,101 @@ function parseCSV(text) {
     const row = {}
     headers.forEach((h, idx) => row[h] = vals[idx]?.trim() ?? '')
     if (!row.district || !row.week || !row.year || row.cases === undefined) {
-      errors.push(`Row ${i+1}: missing required columns (district, week, year, cases)`)
+      errors.push(`Row ${i + 1}: missing required columns (district, week, year, cases)`)
       continue
     }
-    rows.push({ district: row.district, week: parseInt(row.week), year: parseInt(row.year), cases: parseInt(row.cases) || 0 })
+    rows.push({
+      district: row.district,
+      week: parseInt(row.week),
+      year: parseInt(row.year),
+      cases: parseInt(row.cases) || 0,
+    })
   }
   return { rows, errors }
 }
 
+function hasReportedValue(v) {
+  if (v == null || v === '') return false
+  return true
+}
+
+function isPlaceholderWeek(byDistrict) {
+  const present = DISTRICTS.map(d => byDistrict[d]).filter(hasReportedValue)
+  if (!present.length) return true
+  return present.length === DISTRICTS.length && present.every(v => Number(v) === 0)
+}
+
+function weekFill(byDistrict) {
+  if (isPlaceholderWeek(byDistrict)) {
+    return { filled: 0, status: 'missing', label: `needs entry (0/${DISTRICTS.length})` }
+  }
+  const filled = DISTRICTS.filter(d => hasReportedValue(byDistrict[d])).length
+  if (filled === 0) return { filled: 0, status: 'missing', label: `needs entry (0/${DISTRICTS.length})` }
+  if (filled < DISTRICTS.length) return { filled, status: 'incomplete', label: `partial (${filled}/${DISTRICTS.length})` }
+  return { filled, status: 'complete', label: `saved (${filled}/${DISTRICTS.length})` }
+}
+
+function rowsForWeek(dengueCounts, week, year) {
+  const byDistrict = {}
+  for (const r of dengueCounts || []) {
+    if (parseInt(r.week, 10) === parseInt(week, 10) && parseInt(r.year, 10) === parseInt(year, 10)) {
+      byDistrict[String(r.district).trim()] = r.cases
+    }
+  }
+  const placeholder = isPlaceholderWeek(byDistrict)
+  return DISTRICTS.map(district => ({
+    district,
+    week,
+    year,
+    cases: !placeholder && hasReportedValue(byDistrict[district]) ? String(byDistrict[district]) : '',
+  }))
+}
+
 export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
-  const [mode, setMode]           = useState('upload') // 'upload' | 'manual'
-  const [manualRows, setManual]   = useState(() => {
-    const { week, year } = getCurrentWeekYear()
-    return DISTRICTS.map(d => ({ district: d, week, year, cases: '' }))
-  })
-  const [weekInput, setWeekInput] = useState(() => getCurrentWeekYear().week)
-  const [yearInput, setYearInput] = useState(() => getCurrentWeekYear().year)
-  const [file, setFile]           = useState(null)
-  const [preview, setPreview]     = useState(null)
-  const [parseErrors, setErrors]  = useState([])
-  const [saving, setSaving]       = useState(false)
-  const [message, setMessage]     = useState(null)
+  const defaultWeek = lastCompleteIsoWeek()
+  const [mode, setMode] = useState('manual')
+  const [weekInput, setWeekInput] = useState(defaultWeek.week)
+  const [yearInput, setYearInput] = useState(defaultWeek.year)
+  const [manualRows, setManual] = useState(() => rowsForWeek(dengueCounts, defaultWeek.week, defaultWeek.year))
+  const [file, setFile] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [parseErrors, setErrors] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
   const fileRef = useRef()
+
+  const countsByWeek = useMemo(() => {
+    const map = {}
+    for (const r of dengueCounts || []) {
+      const key = `${parseInt(r.year, 10)}_${parseInt(r.week, 10)}`
+      if (!map[key]) map[key] = {}
+      map[key][String(r.district).trim()] = r.cases
+    }
+    return map
+  }, [dengueCounts])
+
+  useEffect(() => {
+    const byDistrict = countsByWeek[`${parseInt(yearInput, 10)}_${parseInt(weekInput, 10)}`] || {}
+    const placeholder = isPlaceholderWeek(byDistrict)
+    setManual(DISTRICTS.map(district => ({
+      district,
+      week: weekInput,
+      year: yearInput,
+      cases: !placeholder && hasReportedValue(byDistrict[district]) ? String(byDistrict[district]) : '',
+    })))
+  }, [countsByWeek, weekInput, yearInput])
+
+  const weekOptions = useMemo(() => {
+    return listRecentIsoWeeks(26).map(({ week, year }) => {
+      const byDistrict = countsByWeek[`${year}_${week}`] || {}
+      return { week, year, ...weekFill(byDistrict) }
+    })
+  }, [countsByWeek])
+
+  const missingWeeks = weekOptions.filter(w => w.status !== 'complete')
+  const selectedMeta = weekOptions.find(w => w.week === weekInput && w.year === yearInput)
+  const missingDistricts = manualRows.filter(r => r.cases === '').map(r => r.district)
+  const filledCount = DISTRICTS.length - missingDistricts.length
 
   const handleFileChange = (e) => {
     const f = e.target.files[0]
@@ -82,18 +151,21 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
     setManual(rows => rows.map(r => r.district === district ? { ...r, cases: val } : r))
   }
 
-  const updateAllWeek = (week, year) => {
-    setWeekInput(week); setYearInput(year)
-    setManual(rows => rows.map(r => ({ ...r, week, year })))
+  const selectWeek = (week, year) => {
+    setWeekInput(week)
+    setYearInput(year)
   }
 
   const handleManualSave = async () => {
-    const valid = manualRows.filter(r => r.cases !== '' && !isNaN(parseInt(r.cases)))
-    if (!valid.length) { setMessage({ type: 'error', text: 'Enter at least one case count' }); return }
+    const valid = manualRows.filter(r => r.cases !== '' && !isNaN(parseInt(r.cases, 10)))
+    if (!valid.length) {
+      setMessage({ type: 'error', text: 'Enter at least one case count' })
+      return
+    }
     setSaving(true)
     try {
-      await onSave(valid.map(r => ({ ...r, cases: parseInt(r.cases) })))
-      setMessage({ type: 'success', text: `Saved ${valid.length} district records` })
+      await onSave(valid.map(r => ({ ...r, week: weekInput, year: yearInput, cases: parseInt(r.cases, 10) })))
+      setMessage({ type: 'success', text: `Saved ${valid.length} district records for W${weekInput} ${yearInput}` })
     } catch (e) {
       setMessage({ type: 'error', text: e.message })
     } finally {
@@ -110,11 +182,11 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
             Weekly Dengue Case Counts
           </h3>
           <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Input reported cases per district to improve ML predictions
+            Select a week to load saved counts from the database, then fill any missing districts
           </p>
         </div>
         <div style={{ display: 'flex', background: 'var(--bg-elevated)', borderRadius: 8, padding: 3, gap: 3 }}>
-          {['upload','manual'].map(m => (
+          {['upload', 'manual'].map(m => (
             <button
               key={m}
               className="btn"
@@ -122,7 +194,7 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
                 padding: '5px 14px', fontSize: 12,
                 background: mode === m ? 'var(--bg-card)' : 'transparent',
                 border: mode === m ? '1px solid var(--border-strong)' : '1px solid transparent',
-                color: mode === m ? 'var(--text-primary)' : 'var(--text-muted)'
+                color: mode === m ? 'var(--text-primary)' : 'var(--text-muted)',
               }}
               onClick={() => setMode(m)}
             >
@@ -138,7 +210,7 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
           padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13,
           background: message.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
           border: `1px solid ${message.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
-          color: message.type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)'
+          color: message.type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)',
         }}>
           {message.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
           {message.text}
@@ -147,7 +219,6 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
 
       {mode === 'upload' && (
         <div>
-          {/* Template hint */}
           <div style={{
             padding: '10px 14px',
             background: 'rgba(59,130,246,0.07)',
@@ -155,7 +226,7 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
             borderRadius: 8,
             marginBottom: 16,
             fontSize: 12,
-            color: 'var(--text-secondary)'
+            color: 'var(--text-secondary)',
           }}>
             <strong style={{ color: 'var(--accent-blue)' }}>CSV format required:</strong>{' '}
             <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 3 }}>
@@ -172,7 +243,7 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
               textAlign: 'center',
               cursor: 'pointer',
               transition: 'all 0.2s',
-              background: file ? 'rgba(59,130,246,0.04)' : 'transparent'
+              background: file ? 'rgba(59,130,246,0.04)' : 'transparent',
             }}
             onClick={() => fileRef.current?.click()}
             onDragOver={e => e.preventDefault()}
@@ -237,13 +308,64 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
 
       {mode === 'manual' && (
         <div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 20 }}>
+          {missingWeeks.length > 0 && (
+            <div style={{
+              padding: '10px 12px',
+              background: 'rgba(234,179,8,0.08)',
+              border: '1px solid rgba(234,179,8,0.22)',
+              borderRadius: 8,
+              marginBottom: 16,
+            }}>
+              <p style={{ fontSize: 11, color: 'var(--accent-yellow)', fontWeight: 600, marginBottom: 8 }}>
+                Weeks needing entry ({missingWeeks.length} of last 26)
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {missingWeeks.slice(0, 16).map(w => (
+                  <button
+                    key={`${w.year}_${w.week}`}
+                    className="btn"
+                    onClick={() => selectWeek(w.week, w.year)}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      background: w.week === weekInput && w.year === yearInput ? 'rgba(234,179,8,0.2)' : 'var(--bg-elevated)',
+                      border: '1px solid var(--border-strong)',
+                    }}
+                  >
+                    W{String(w.week).padStart(2, '0')} {w.year}
+                    <span style={{ marginLeft: 6, color: w.status === 'missing' ? 'var(--accent-red)' : 'var(--accent-yellow)' }}>
+                      {w.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>WEEK FILTER</label>
+              <select
+                value={`${yearInput}_${weekInput}`}
+                onChange={e => {
+                  const [year, week] = e.target.value.split('_').map(Number)
+                  selectWeek(week, year)
+                }}
+                style={{ minWidth: 260, fontSize: 13 }}
+              >
+                {weekOptions.map(w => (
+                  <option key={`${w.year}_${w.week}`} value={`${w.year}_${w.week}`}>
+                    {`W${String(w.week).padStart(2, '0')} ${w.year} · ${formatWeekRange(w.week, w.year)} · ${w.label}`}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>WEEK</label>
               <input
-                type="number" min={1} max={52} value={weekInput}
+                type="number" min={1} max={53} value={weekInput}
                 style={{ width: 80 }}
-                onChange={e => updateAllWeek(parseInt(e.target.value) || 1, yearInput)}
+                onChange={e => selectWeek(parseInt(e.target.value, 10) || 1, yearInput)}
               />
             </div>
             <div>
@@ -251,13 +373,28 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
               <input
                 type="number" min={2020} max={2099} value={yearInput}
                 style={{ width: 90 }}
-                onChange={e => updateAllWeek(weekInput, parseInt(e.target.value) || 2025)}
+                onChange={e => selectWeek(weekInput, parseInt(e.target.value, 10) || yearInput)}
               />
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', paddingBottom: 6 }}>
-              Enter case counts for W{String(weekInput).padStart(2,'0')} {yearInput}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 6 }}>
+              <WeekBadge week={weekInput} year={yearInput} compact />
+              <span style={{
+                fontSize: 11,
+                fontFamily: 'var(--font-mono)',
+                color: filledCount === DISTRICTS.length ? 'var(--accent-green)' : filledCount === 0 ? 'var(--accent-red)' : 'var(--accent-yellow)',
+              }}>
+                {filledCount}/{DISTRICTS.length} in DB
+              </span>
+            </div>
           </div>
+
+          {selectedMeta?.status !== 'complete' && (
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+              {filledCount === 0
+                ? 'No reported cases in the database for this week. Empty districts still need entry.'
+                : `${missingDistricts.length} district${missingDistricts.length === 1 ? '' : 's'} still missing: ${missingDistricts.slice(0, 8).join(', ')}${missingDistricts.length > 8 ? '…' : ''}`}
+            </p>
+          )}
 
           <div style={{
             display: 'grid',
@@ -265,32 +402,40 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
             gap: 10,
             maxHeight: 380,
             overflowY: 'auto',
-            paddingRight: 4
+            paddingRight: 4,
           }}>
-            {manualRows.map(row => (
-              <div key={row.district} style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'var(--bg-elevated)', borderRadius: 8, padding: '8px 12px',
-                border: row.cases !== '' ? '1px solid rgba(234,179,8,0.2)' : '1px solid var(--border)'
-              }}>
-                <span style={{ flex: 1, fontSize: 12, color: 'var(--text-secondary)' }}>{row.district}</span>
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="0"
-                  value={row.cases}
-                  onChange={e => updateManualRow(row.district, e.target.value)}
-                  style={{
-                    width: 64, textAlign: 'right',
-                    fontFamily: 'var(--font-mono)', fontSize: 13,
-                    color: 'var(--accent-yellow)',
-                    background: 'transparent',
-                    border: 'none', borderBottom: '1px solid var(--border-strong)',
-                    borderRadius: 0, padding: '2px 4px'
-                  }}
-                />
-              </div>
-            ))}
+            {manualRows.map(row => {
+              const missing = row.cases === ''
+              return (
+                <div key={row.district} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: 'var(--bg-elevated)', borderRadius: 8, padding: '8px 12px',
+                  border: missing ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(34,197,94,0.25)',
+                }}>
+                  <span style={{ flex: 1, fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {row.district}
+                    {missing && (
+                      <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent-red)' }}>missing</span>
+                    )}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="—"
+                    value={row.cases}
+                    onChange={e => updateManualRow(row.district, e.target.value)}
+                    style={{
+                      width: 64, textAlign: 'right',
+                      fontFamily: 'var(--font-mono)', fontSize: 13,
+                      color: 'var(--accent-yellow)',
+                      background: 'transparent',
+                      border: 'none', borderBottom: '1px solid var(--border-strong)',
+                      borderRadius: 0, padding: '2px 4px',
+                    }}
+                  />
+                </div>
+              )
+            })}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
@@ -302,7 +447,6 @@ export default function DengueInputPanel({ dengueCounts, onUpload, onSave }) {
         </div>
       )}
 
-      {/* Existing data summary */}
       {dengueCounts?.length > 0 && (
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
           <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>

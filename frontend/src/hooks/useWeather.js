@@ -27,25 +27,17 @@ export function useWeather() {
     ])
     const [s, l, w, p, ap, d, ws] = results
     if (s.status === 'fulfilled') setStatus(s.value)
-    if (l.status === 'fulfilled') setLogs(l.value)
-    if (w.status === 'fulfilled') setWeatherData(w.value)
-    if (p.status === 'fulfilled' && Array.isArray(p.value) && p.value.length) {
-      setPredictions(p.value)
-    }
-    if (ap.status === 'fulfilled' && Array.isArray(ap.value) && ap.value.length) {
-      setAllPredictions(ap.value)
-    }
-    if (d.status === 'fulfilled') setDengueCounts(d.value)
+    if (l.status === 'fulfilled' && Array.isArray(l.value)) setLogs(l.value)
+    if (w.status === 'fulfilled' && Array.isArray(w.value)) setWeatherData(w.value)
+    if (p.status === 'fulfilled' && Array.isArray(p.value)) setPredictions(p.value)
+    if (ap.status === 'fulfilled' && Array.isArray(ap.value)) setAllPredictions(ap.value)
+    if (d.status === 'fulfilled' && Array.isArray(d.value)) setDengueCounts(d.value)
     if (ws.status === 'fulfilled') setWeatherStats(ws.value)
     setLoading(false)
     setLastRefresh(new Date())
   }, [])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    const interval = setInterval(load, 30000)
-    return () => clearInterval(interval)
-  }, [load])
 
   const runWeatherJob = useCallback(async (dryRun = false) => {
     setJobRunning(j => ({ ...j, weather: true }))
@@ -62,14 +54,7 @@ export function useWeather() {
     setJobRunning(j => ({ ...j, prediction: true }))
     try {
       const result = await api.triggerPrediction(dryRun)
-      if (result?.predictions?.length) {
-        setPredictions(result.predictions)
-        setAllPredictions((prev) => {
-          const next = result.predictions
-          const keys = new Set(next.map((row) => `${row.district}_${row.predicted_year}_${row.predicted_week}`))
-          return [...prev.filter((row) => !keys.has(`${row.district}_${row.predicted_year}_${row.predicted_week}`)), ...next]
-        })
-      }
+      await load()
       return result
     } finally {
       setJobRunning(j => ({ ...j, prediction: false }))

@@ -11,7 +11,7 @@ import { WeatherJobService } from '../weather-job/weather-job.service';
 import { LoggingService } from '../logging/logging.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { DatasetRecord } from '../dataset/dataset.entity';
 import { DatasetService } from '../dataset/dataset.service';
 import 'multer';
@@ -59,17 +59,20 @@ export class WeatherController {
     let q = this.datasetRepo.createQueryBuilder('d');
     if (week) q = q.andWhere('d.week = :week', { week: parseInt(week) });
     if (year) q = q.andWhere('d.year = :year', { year: parseInt(year) });
-    const records = await q.getMany();
-    // Map to old weather API structure (strings)
+    if (!week && !year) {
+      q = q.andWhere('d.avg_temp IS NOT NULL').andWhere('d.avg_temp != 0');
+    }
+    const records = await q.orderBy('d.year', 'ASC').addOrderBy('d.week', 'ASC').getMany();
+    // Map to old weather API structure (strings). Keep nulls so placeholders are not treated as 0°C / 0mm.
     return records.map(r => ({
       year: r.year.toString(),
       week: r.week.toString(),
       district: r.district,
-      avg_temp: r.avg_temp?.toString() || '0',
-      humidity: r.avg_humidity?.toString() || '0',
-      avg_humidity: r.avg_humidity?.toString() || '0',
-      precipitation: r.total_rainfall?.toString() || '0',
-      wind_speed: r.avg_windspeed?.toString() || '0'
+      avg_temp: r.avg_temp != null ? r.avg_temp.toString() : null,
+      humidity: r.avg_humidity != null ? r.avg_humidity.toString() : null,
+      avg_humidity: r.avg_humidity != null ? r.avg_humidity.toString() : null,
+      precipitation: r.total_rainfall != null ? r.total_rainfall.toString() : null,
+      wind_speed: r.avg_windspeed != null ? r.avg_windspeed.toString() : null,
     }));
   }
 
@@ -102,12 +105,15 @@ export class WeatherController {
   // ── Dengue Counts ─────────────────────────────────────────
   @Get('dengue/counts')
   async getDengueCounts() {
-    const records = await this.datasetRepo.find();
+    const records = await this.datasetRepo.find({
+      where: { dengue_cases: Not(IsNull()) },
+      order: { year: 'ASC', week: 'ASC', district: 'ASC' },
+    });
     return records.map(r => ({
       district: r.district,
       week: r.week.toString(),
       year: r.year.toString(),
-      cases: r.dengue_cases?.toString() || '0'
+      cases: r.dengue_cases.toString(),
     }));
   }
 

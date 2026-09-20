@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import {
-  Activity, CloudRain, Brain, Database, FileText, RefreshCw,
-  Map, BarChart2, Settings, AlertTriangle, CheckCircle2,
-  TrendingUp, Wind, Droplets, Thermometer, Eye
+  CloudRain, Brain, Database, FileText, RefreshCw,
+  Map as MapIcon, BarChart2, AlertTriangle, CheckCircle2,
+  TrendingUp, Wind, Droplets, Thermometer
 } from 'lucide-react'
-import { useWeather, computeRisk, getRiskColor } from './hooks/useWeather'
+import { useWeather, computeRisk } from './hooks/useWeather'
 import StatCard from './components/StatCard'
 import SkeletonLoader from './components/SkeletonLoader'
 import DistrictTable from './components/DistrictTable'
@@ -16,11 +16,44 @@ import { WeatherTrendChart, PredictionChart, PredictionHistoryChart, DistrictTre
 import { useAuth } from './hooks/useAuth'
 import Login from './components/Login'
 import RiskBadge from './components/RiskBadge'
+import WeekBadge from './components/WeekBadge'
+import { lastCompleteIsoWeek, shiftIsoWeek, formatWeekRange } from './utils/dateUtils'
+
+function uniquePredictionWeeks(rows) {
+  const seen = new Map()
+  for (const p of rows || []) {
+    const year = Number(p.predicted_year)
+    const week = Number(p.predicted_week)
+    if (!year || !week) continue
+    const key = `${year}-${week}`
+    if (!seen.has(key)) seen.set(key, { year, week, key })
+  }
+  return [...seen.values()].sort((a, b) => (a.year !== b.year ? b.year - a.year : b.week - a.week))
+}
+
+function predictionsForWeek(rows, year, week) {
+  const byDistrict = {}
+  for (const p of rows || []) {
+    if (Number(p.predicted_year) === Number(year) && Number(p.predicted_week) === Number(week)) {
+      byDistrict[p.district] = p
+    }
+  }
+  return Object.values(byDistrict)
+}
+
+function hasObservedWeather(r) {
+  const temp = parseFloat(r?.avg_temp)
+  const hum = parseFloat(r?.humidity ?? r?.avg_humidity)
+  if (r?.avg_temp == null || r.avg_temp === '') return false
+  if (!Number.isFinite(temp)) return false
+  if (temp === 0 && (!Number.isFinite(hum) || hum === 0)) return false
+  return true
+}
 
 const TABS = [
   { id: 'overview',    label: 'Overview',    icon: <BarChart2 size={14} /> },
   { id: 'predictions', label: 'Predictions', icon: <Brain size={14} /> },
-  { id: 'districts',  label: 'Districts',   icon: <Map size={14} /> },
+  { id: 'districts',  label: 'Districts',   icon: <MapIcon size={14} /> },
   { id: 'data',       label: 'Data Input',  icon: <Database size={14} /> },
   { id: 'logs',       label: 'Job Logs',    icon: <FileText size={14} /> },
 ]
@@ -31,12 +64,19 @@ export default function App() {
   const [dryRun, setDryRun]         = useState(false)
   const [selectedDistrict, setSel]  = useState(null)
   const [toast, setToast]           = useState(null)
+  const [predictConfirm, setPredictConfirm] = useState(null)
+  const [predWeekKey, setPredWeekKey] = useState('')
   const {
-    status, logs, weatherData, predictions, allPredictions,
-    dengueCounts, weatherStats, loading, jobRunning,
-    lastRefresh, runWeatherJob, runPrediction,
+    status, logs: logsRaw, weatherData: weatherRaw, predictions: predRaw,
+    allPredictions: allPredRaw, dengueCounts: dengueRaw, weatherStats,
+    loading, jobRunning, lastRefresh, runPrediction,
     uploadDengue, saveDengue, refresh
   } = useWeather()
+  const logs = Array.isArray(logsRaw) ? logsRaw : []
+  const weatherData = Array.isArray(weatherRaw) ? weatherRaw : []
+  const predictions = Array.isArray(predRaw) ? predRaw : []
+  const allPredictions = Array.isArray(allPredRaw) ? allPredRaw : []
+  const dengueCounts = Array.isArray(dengueRaw) ? dengueRaw : []
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -46,15 +86,17 @@ export default function App() {
   if (authLoading) return <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}><span className="spinner" /></div>
   if (!user) return <Login />
 
-  const handleWeatherTrigger = async () => {
-    try {
-      const r = await runWeatherJob(dryRun)
-      const weekLabel = r.weeks?.length ? ` across ${r.weeks.length} weeks` : ''
-      showToast(`Weather saved: ${r.districts_fetched} district-weeks${weekLabel}${dryRun ? ' (dry run)' : ''}`)
-    } catch (e) { showToast(e.message, 'error') }
-  }
+  const nextPredictWeek = (() => {
+    const last = lastCompleteIsoWeek()
+    return shiftIsoWeek(last.year, last.week, 1)
+  })()
 
-  const handlePredictionTrigger = async () => {
+  const weekAlreadyPredicted = (year, week) =>
+    [...allPredictions, ...predictions].some(
+      p => Number(p.predicted_year) === Number(year) && Number(p.predicted_week) === Number(week),
+    )
+
+  const executePrediction = async () => {
     try {
       const r = await runPrediction(dryRun)
       if (dryRun) {
@@ -66,17 +108,37 @@ export default function App() {
     } catch (e) { showToast(e.message, 'error') }
   }
 
+  const handlePredictionTrigger = () => {
+    if (jobRunning.prediction) return
+    if (!dryRun && weekAlreadyPredicted(nextPredictWeek.year, nextPredictWeek.week)) {
+      setPredictConfirm(nextPredictWeek)
+      return
+    }
+    executePrediction()
+  }
+
   // Derived stats
   const latestWeather = {}
+  let latestWeatherYear = 0
+  let latestWeatherWeek = 0
   weatherData.forEach(r => {
-    const d = r.district
-    if (!latestWeather[d]) { latestWeather[d] = r; return }
-    const existing = latestWeather[d]
-    const newer = parseInt(r.year) > parseInt(existing.year) ||
-      (parseInt(r.year) === parseInt(existing.year) && parseInt(r.week) > parseInt(existing.week))
-    if (newer) latestWeather[d] = r
+    if (!hasObservedWeather(r)) return
+    const y = parseInt(r.year)
+    const w = parseInt(r.week)
+    if (y > latestWeatherYear || (y === latestWeatherYear && w > latestWeatherWeek)) {
+      latestWeatherYear = y
+      latestWeatherWeek = w
+    }
+  })
+  weatherData.forEach(r => {
+    if (!hasObservedWeather(r)) return
+    if (parseInt(r.year) !== latestWeatherYear || parseInt(r.week) !== latestWeatherWeek) return
+    latestWeather[r.district] = r
   })
   const latestRows = Object.values(latestWeather)
+  const weatherWeekLabel = latestWeatherYear
+    ? `W${String(latestWeatherWeek).padStart(2, '0')} ${latestWeatherYear}`
+    : 'no weather week'
   const riskCounts = latestRows.reduce((acc, r) => {
     const { level } = computeRisk(r)
     acc[level] = (acc[level] || 0) + 1
@@ -97,12 +159,14 @@ export default function App() {
   const weeklyAverages = (() => {
     const byWeek = {}
     weatherData.forEach(r => {
+      if (!hasObservedWeather(r)) return
       const key = `${r.year}_${String(r.week).padStart(2,'0')}`
       if (!byWeek[key]) byWeek[key] = { week: r.week, year: r.year, items: [] }
       byWeek[key].items.push(r)
     })
     return Object.values(byWeek)
       .sort((a, b) => parseInt(a.year) !== parseInt(b.year) ? parseInt(a.year) - parseInt(b.year) : parseInt(a.week) - parseInt(b.week))
+      .slice(-52)
       .map(({ week, year, items }) => ({
         week, year,
         district: 'National',
@@ -121,6 +185,18 @@ export default function App() {
   const selectedWeather = selectedDistrict ? latestWeather[selectedDistrict] : null
   const selectedRisk    = selectedWeather ? computeRisk(selectedWeather) : null
   const selectedPred    = selectedDistrict ? predictions.find(p => p.district === selectedDistrict) : null
+
+  const predictionWeeks = uniquePredictionWeeks([...allPredictions, ...predictions])
+  const activePredWeek = predictionWeeks.find(w => w.key === predWeekKey) || predictionWeeks[0] || null
+  const weekPredictions = activePredWeek
+    ? predictionsForWeek([...allPredictions, ...predictions], activePredWeek.year, activePredWeek.week)
+    : []
+  const predWeekLabel = activePredWeek
+    ? `W${String(activePredWeek.week).padStart(2, '0')} ${activePredWeek.year}`
+    : null
+  const selectedWeekPred = selectedDistrict
+    ? weekPredictions.find(p => p.district === selectedDistrict)
+    : null
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -141,6 +217,54 @@ export default function App() {
             ? <AlertTriangle size={14} />
             : <CheckCircle2 size={14} />}
           {toast.msg}
+        </div>
+      )}
+
+      {predictConfirm && (
+        <div
+          role="presentation"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="predict-confirm-title"
+            className="card"
+            style={{ padding: 24, maxWidth: 420, width: '100%' }}
+          >
+            <h3
+              id="predict-confirm-title"
+              style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, marginBottom: 10 }}
+            >
+              This week is already predicted
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+              Week {predictConfirm.week}, {predictConfirm.year} already has a forecast.
+              A new prediction will override the existing values. Are you sure you want to continue?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setPredictConfirm(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setPredictConfirm(null)
+                  executePrediction()
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -210,19 +334,6 @@ export default function App() {
                     </label>
                     Dry Run (preview, don’t save)
                   </div>
-
-                  {/* Weather trigger */}
-                  <button
-                    className="btn btn-ghost"
-                    style={{ fontSize: 12 }}
-                    disabled={jobRunning.weather}
-                    onClick={handleWeatherTrigger}
-                  >
-                    {jobRunning.weather
-                      ? <span className="spinner" />
-                      : <CloudRain size={13} />}
-                    Fetch 4 weeks
-                  </button>
 
                   {/* Prediction trigger */}
                   <button
@@ -300,7 +411,9 @@ export default function App() {
                   <StatCard
                     label="Predicted Cases"
                     value={loading ? null : predictions.length ? totalPredicted.toLocaleString() : '—'}
-                    sub="National total, next week"
+                    sub={predictions[0]?.predicted_week
+                      ? `Week ${predictions[0].predicted_week}, ${predictions[0].predicted_year}`
+                      : 'National total'}
                     accent="var(--accent-red)"
                     icon={<AlertTriangle size={15} />}
                     loading={loading}
@@ -315,16 +428,16 @@ export default function App() {
                   />
                   <StatCard
                     label="Avg Temperature"
-                    value={loading ? null : avgTemp ? `${avgTemp}°C` : '—'}
-                    sub="Latest week, national average"
+                    value={loading ? null : avgTemp != null ? `${avgTemp}°C` : '—'}
+                    sub={`${weatherWeekLabel}, national average`}
                     accent="var(--accent-blue)"
                     icon={<Thermometer size={15} />}
                     loading={loading}
                   />
                   <StatCard
                     label="Avg Rainfall"
-                    value={loading ? null : avgRain ? `${avgRain}mm` : '—'}
-                    sub="Latest week, national average"
+                    value={loading ? null : avgRain != null ? `${avgRain}mm` : '—'}
+                    sub={`${weatherWeekLabel}, national average`}
                     accent="var(--accent-blue)"
                     icon={<CloudRain size={15} />}
                     loading={loading}
@@ -417,9 +530,26 @@ export default function App() {
                 </h2>
                 <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                   TensorFlow/Keras model — 4-week weather + historical case lookback
+                  {predWeekLabel ? ` · viewing ${predWeekLabel}` : ''}
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {predictionWeeks.length > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                    Week
+                    <select
+                      value={activePredWeek?.key || ''}
+                      onChange={e => setPredWeekKey(e.target.value)}
+                      style={{ minWidth: 240, width: 'auto', fontSize: 13 }}
+                    >
+                      {predictionWeeks.map(w => (
+                        <option key={w.key} value={w.key}>
+                          {`W${String(w.week).padStart(2, '0')} ${w.year} · ${formatWeekRange(w.week, w.year)}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {user?.role === 'ADMIN' && (
                 <button
                   className="btn btn-primary"
@@ -491,6 +621,9 @@ export default function App() {
                       </h3>
                       <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                         Historical actual cases vs current forecast models
+                        {selectedWeekPred
+                          ? ` · ${predWeekLabel}: ${selectedWeekPred.predicted_cases} predicted`
+                          : predWeekLabel ? ` · no forecast for ${predWeekLabel}` : ''}
                       </p>
                     </div>
                     
@@ -509,13 +642,14 @@ export default function App() {
                 ) : (
                   <div>
                     {/* Top district prediction cards */}
-                    {predictions.length > 0 && (
+                    {weekPredictions.length > 0 && (
                       <>
                         <h4 style={{ fontSize: 11, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>
                           Top Districts by Predicted Cases
+                          {predWeekLabel ? ` · ${predWeekLabel}` : ''}
                         </h4>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10, marginBottom: 28 }}>
-                          {predictions
+                          {weekPredictions
                             .slice()
                             .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
                             .slice(0, 4)
@@ -563,18 +697,19 @@ export default function App() {
                       </h3>
                       <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
                         Top 15 by predicted case count
+                        {predWeekLabel ? ` · ${predWeekLabel}` : ''}
                         {dengueCounts.length > 0 && ' · Yellow bars show reported cases where available'}
                       </p>
                       {loading
                         ? <div className="skeleton" style={{ height: 280 }} />
-                        : <PredictionChart predictions={predictions} dengue={dengueCounts} />}
+                        : <PredictionChart predictions={weekPredictions} dengue={dengueCounts} />}
                     </div>
 
                     {/* All predictions table */}
-                    {predictions.length > 0 && (
+                    {weekPredictions.length > 0 && (
                       <div className="card" style={{ padding: 20 }}>
                         <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
-                          All 25 Districts
+                          All districts{predWeekLabel ? ` · ${predWeekLabel}` : ''}
                         </h3>
                         <div style={{ overflowX: 'auto' }}>
                           <table className="data-table">
@@ -588,13 +723,17 @@ export default function App() {
                               </tr>
                             </thead>
                             <tbody>
-                              {predictions
+                              {weekPredictions
                                 .slice()
                                 .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
                                 .map(p => {
                                   const cases = parseInt(p.predicted_cases) || 0;
                                   const severityColor = cases > 200 ? 'var(--risk-high)' : cases > 50 ? 'var(--risk-medium)' : 'var(--risk-low)';
-                                  const reported = dengueCounts.find(d => d.district === p.district)
+                                  const reported = dengueCounts.find(d =>
+                                    d.district === p.district
+                                    && String(d.week) === String(p.predicted_week)
+                                    && String(d.year) === String(p.predicted_year)
+                                  )
                                   return (
                                     <tr key={p.district} style={{ cursor: 'pointer' }}
                                       onClick={() => setSel(p.district)}>
@@ -613,8 +752,8 @@ export default function App() {
                                       <td style={{ fontFamily: 'var(--font-mono)', color: '#eab308' }}>
                                         {reported ? reported.cases : '—'}
                                       </td>
-                                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
-                                        W{String(p.predicted_week).padStart(2,'0')} {p.predicted_year}
+                                      <td>
+                                        <WeekBadge week={p.predicted_week} year={p.predicted_year} compact />
                                       </td>
                                     </tr>
                                   )
@@ -625,15 +764,19 @@ export default function App() {
                       </div>
                     )}
 
-                    {!loading && !predictions.length && (
+                    {!loading && !weekPredictions.length && (
                       <div style={{
                         textAlign: 'center', padding: 64,
                         border: '1px dashed var(--border)', borderRadius: 12
                       }}>
                         <Brain size={40} style={{ color: 'var(--text-muted)', marginBottom: 16 }} />
-                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 8 }}>No predictions yet</h3>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 8 }}>
+                          {predictionWeeks.length ? 'No predictions for this week' : 'No predictions yet'}
+                        </h3>
                         <p style={{ color: 'var(--text-muted)', marginBottom: 20, fontSize: 13 }}>
-                          Make sure weather data exists, then click Run Prediction to generate forecasts.
+                          {predictionWeeks.length
+                            ? 'Choose another week from the selector, or run a new prediction.'
+                            : 'Make sure weather data exists, then click Run Prediction to generate forecasts.'}
                         </p>
                         {user?.role === 'ADMIN' && (
                           <button className="btn btn-primary" onClick={handlePredictionTrigger}>
@@ -696,9 +839,12 @@ export default function App() {
                         border: '1px solid rgba(239,68,68,0.2)',
                         borderRadius: 8, padding: '12px 16px', marginBottom: 16
                       }}>
-                        <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 4 }}>
-                          ML Prediction — W{String(selectedPred.predicted_week).padStart(2,'0')} {selectedPred.predicted_year}
-                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
+                            ML Prediction
+                          </span>
+                          <WeekBadge week={selectedPred.predicted_week} year={selectedPred.predicted_year} compact />
+                        </div>
                         <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 32, color: '#ef4444', lineHeight: 1 }}>
                           {selectedPred.predicted_cases}
                           <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 6, fontFamily: 'var(--font-body)', fontWeight: 400 }}>

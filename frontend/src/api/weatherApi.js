@@ -22,7 +22,7 @@ export const getStatus = async () => (await client.get('/weather/status')).data
 export const getLogs = async (limit = 50) => (await client.get('/weather/logs', { params: { limit } })).data
 export const getWeatherData = async (week, year) => (await client.get('/weather/data', { params: { week, year } })).data
 export const getWeatherStats = async () => (await client.get('/weather/data/stats')).data
-export const triggerWeather = async (dryRun = false, weeks = 4) =>
+export const triggerWeather = async (dryRun = false, weeks = 1) =>
   (await client.post(`/weather/trigger?dryRun=${dryRun}&weeks=${weeks}`)).data
 
 export const triggerPrediction = async (dryRun = false) => (await client.post(`/prediction/run?dryRun=${dryRun}`)).data

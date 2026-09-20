@@ -2,6 +2,7 @@ import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
+import { formatWeekRange } from '../utils/dateUtils'
 
 const COLORS = {
   avg_temp: '#f97316',
@@ -23,21 +24,37 @@ const LABELS = {
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
+  const rowData = payload[0]?.payload
+  const weekNum = rowData?.rawWeek || (typeof label === 'string' && label.match(/W(\d+)/i)?.[1])
+  const yearNum = rowData?.rawYear || (typeof label === 'string' && label.match(/\b(20\d\d)\b/)?.[1]) || new Date().getFullYear()
+  const dateRange = weekNum ? formatWeekRange(weekNum, yearNum) : null
+
   return (
     <div style={{
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-strong)',
+      background: 'rgba(18, 20, 29, 0.96)',
+      backdropFilter: 'blur(8px)',
+      border: '1px solid rgba(255, 255, 255, 0.15)',
       borderRadius: 8,
       padding: '10px 14px',
       fontSize: 12,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
     }}>
-      <p style={{ color: 'var(--text-muted)', marginBottom: 6, fontFamily: 'var(--font-mono)' }}>{label}</p>
-      {payload.map(p => (
+      <div style={{ marginBottom: 6 }}>
+        <p style={{ color: '#60a5fa', fontWeight: 600, fontFamily: 'var(--font-mono)', margin: 0 }}>
+          {label}
+        </p>
+        {dateRange && (
+          <p style={{ color: 'var(--text-muted)', fontSize: 11, margin: '2px 0 0 0' }}>
+            🗓️ {dateRange}
+          </p>
+        )}
+      </div>
+      {payload.filter(p => p.value != null && p.value !== '').map(p => (
         <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
           <span style={{ color: 'var(--text-secondary)' }}>{LABELS[p.dataKey] || p.dataKey}:</span>
           <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
-            {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}
+            {typeof p.value === 'number' ? (Number.isInteger(p.value) ? p.value : p.value.toFixed(1)) : p.value}
           </span>
         </div>
       ))}
@@ -46,10 +63,12 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 export function WeatherTrendChart({ data, metrics = ['avg_temp', 'humidity'] }) {
-  if (!data?.length) return <EmptyChart message="No weather yet. Admin: click Fetch Weather to pull last week from Open-Meteo." />
+  if (!data?.length) return <EmptyChart message="No observed weather in the dataset yet." />
 
   const chartData = data.map(row => ({
     week: `W${String(row.week || '').padStart(2,'0')}`,
+    rawWeek: row.week,
+    rawYear: row.year,
     ...metrics.reduce((acc, m) => ({ ...acc, [m]: parseFloat(row[m]) || 0 }), {})
   }))
 
@@ -88,34 +107,65 @@ export function WeatherTrendChart({ data, metrics = ['avg_temp', 'humidity'] }) 
 export function PredictionChart({ predictions, dengue }) {
   if (!predictions?.length) return <EmptyChart message="Run prediction to see results" />
 
-  // Merge prediction + actual by district
+  const predWeek = predictions[0]?.predicted_week
+  const predYear = predictions[0]?.predicted_year
   const dengueMap = {}
-  if (dengue?.length) {
-    dengue.forEach(r => { dengueMap[r.district] = parseInt(r.cases) || 0 })
+  if (dengue?.length && predWeek != null && predYear != null) {
+    dengue.forEach(r => {
+      if (String(r.week) !== String(predWeek) || String(r.year) !== String(predYear)) return
+      const n = parseInt(r.cases, 10)
+      if (!Number.isFinite(n) || n <= 0) return
+      dengueMap[String(r.district).trim()] = n
+    })
   }
 
   const data = predictions
     .slice()
-    .sort((a, b) => parseInt(b.predicted_cases) - parseInt(a.predicted_cases))
+    .sort((a, b) => (parseInt(b.predicted_cases, 10) || 0) - (parseInt(a.predicted_cases, 10) || 0))
     .slice(0, 15)
-    .map(r => ({
-      district: r.district?.replace(' District', ''),
-      predicted: parseInt(r.predicted_cases) || 0,
-      actual: dengueMap[r.district] ?? null,
-      low: parseInt(r.confidence_low) || 0,
-      high: parseInt(r.confidence_high) || 0,
-    }))
+    .map(r => {
+      const name = String(r.district || '').trim()
+      const actual = dengueMap[name]
+      return {
+        district: name.replace(/ District$/i, ''),
+        predicted: parseInt(r.predicted_cases, 10) || 0,
+        actual: actual != null ? actual : undefined,
+      }
+    })
+
+  const hasActuals = data.some(d => d.actual != null)
+  const height = Math.max(280, data.length * 28 + 28)
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 70 }}>
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 18, right: 24, bottom: 10, left: 4 }}
+        barCategoryGap={hasActuals ? '16%' : '30%'}
+        barGap={4}
+      >
         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-        <XAxis type="number" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
-        <YAxis dataKey="district" type="category" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={70} />
+        <XAxis type="number" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+        <YAxis
+          dataKey="district"
+          type="category"
+          interval={0}
+          width={88}
+          tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+        />
         <Tooltip content={<CustomTooltip />} />
-        <Bar dataKey="predicted" fill={COLORS.predicted_cases} radius={[0, 4, 4, 0]} maxBarSize={18} name="predicted_cases" />
-        {Object.keys(dengueMap).length > 0 && (
-          <Bar dataKey="actual" fill={COLORS.cases} radius={[0, 4, 4, 0]} maxBarSize={18} name="cases" />
+        <Bar
+          dataKey="predicted"
+          fill={COLORS.predicted_cases}
+          radius={[0, 4, 4, 0]}
+          maxBarSize={hasActuals ? 12 : 14}
+          name="predicted_cases"
+        />
+        {hasActuals && (
+          <Bar dataKey="actual" fill={COLORS.cases} radius={[0, 4, 4, 0]} maxBarSize={12} name="cases" />
         )}
       </BarChart>
     </ResponsiveContainer>
@@ -134,6 +184,8 @@ export function DistrictTrendChart({ data, district }) {
     })
     .map(r => ({
       week: `W${String(r.week).padStart(2,'0')}`,
+      rawWeek: r.week,
+      rawYear: r.year,
       temp: parseFloat(r.avg_temp) || 0,
       humidity: parseFloat(r.humidity) || 0,
       rain: parseFloat(r.precipitation) || 0,
@@ -162,7 +214,13 @@ export function PredictionHistoryChart({ allPredictions }) {
     const year = parseInt(r.predicted_year) || 0
     const week = parseInt(r.predicted_week) || 0
     const key = `${year}_${String(week).padStart(2,'0')}`
-    if (!byWeek[key]) byWeek[key] = { sort: year * 100 + week, week: `Forecast W${String(week).padStart(2,'0')} ${year}`, predicted_cases: 0 }
+    if (!byWeek[key]) byWeek[key] = {
+      sort: year * 100 + week,
+      week: `W${String(week).padStart(2,'0')} ${year}`,
+      rawWeek: week,
+      rawYear: year,
+      predicted_cases: 0
+    }
     byWeek[key].predicted_cases += parseInt(r.predicted_cases) || 0
   })
 

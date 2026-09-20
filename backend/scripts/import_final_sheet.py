@@ -1,4 +1,4 @@
-"""Load Data/final sheet/weather_dengue_population_merged.xlsx into dataset_record."""
+"""Load the filled final Excel into dataset_record."""
 import math
 import os
 import sys
@@ -8,7 +8,14 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 XLSX = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "Data", "final sheet", "weather_dengue_population_merged.xlsx")
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "Data",
+        "final sheet",
+        "weather_dengue_population_merged_Final.xlsx",
+    )
 )
 OUT_CSV = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "training_dataset.csv"))
 
@@ -44,6 +51,7 @@ def main():
     df["year"] = parts[0].astype(int)
     df["week"] = parts[1].astype(int)
 
+    dengue_col = "actual_dengue_cases" if "actual_dengue_cases" in df.columns else "dengue_cases"
     out = pd.DataFrame({
         "Year": df["year"],
         "Week": df["week"],
@@ -52,7 +60,7 @@ def main():
         "Avg_Humidity": df["avg_humidity"],
         "Total_Rainfall": df["total_precip"],
         "Avg_Windspeed": df["avg_windspeed"],
-        "Dengue_Cases": df["dengue_cases"],
+        "Dengue_Cases": df[dengue_col],
         "Max_Temp": df["max_temp"],
         "Min_Temp": df["min_temp"],
         "Rainy_Days": df["rainy_days"],
@@ -75,6 +83,8 @@ def main():
     ]:
         cur.execute(stmt)
 
+    cur.execute("TRUNCATE TABLE dataset_record RESTART IDENTITY")
+
     rows = []
     for r in df.itertuples(index=False):
         rows.append((
@@ -85,7 +95,7 @@ def main():
             nan_none(r.avg_humidity),
             nan_none(r.total_precip),
             nan_none(r.avg_windspeed),
-            None if nan_none(r.dengue_cases) is None else int(r.dengue_cases),
+            None if nan_none(getattr(r, dengue_col)) is None else int(getattr(r, dengue_col)),
             nan_none(r.max_temp),
             nan_none(r.min_temp),
             nan_none(r.rainy_days),

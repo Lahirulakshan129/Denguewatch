@@ -76,6 +76,17 @@ try:
         pred_actual = scaler_y.inverse_transform(pred_scaled).flatten()[0]
         
         pred_rounded = int(max(0, round(pred_actual)))
+        raw_recent = df[df["district"] == district].sort_values("date_week_start").tail(TIMESTEPS)
+        last_cases = raw_recent["dengue_cases"].iloc[-1] if "dengue_cases" in raw_recent else None
+        lag1 = raw_recent["dengue_lag_1"].iloc[-1] if "dengue_lag_1" in raw_recent else None
+        if pd.notna(last_cases):
+            last_cases = float(last_cases)
+            lag1 = float(lag1) if pd.notna(lag1) else last_cases
+            trend = last_cases - lag1
+            persist = last_cases + (0.10 * trend if trend >= 0 else 0.55 * trend)
+            persist = max(0.0, persist)
+            weight = min(0.75, max(0.25, last_cases / (last_cases + 50.0)))
+            pred_rounded = int(max(0, round((1.0 - weight) * pred_rounded + weight * persist)))
         
         # Calculate target week (the week AFTER the latest data)
         last_date = pd.to_datetime(recent_data["date_week_start"].iloc[-1])
@@ -83,10 +94,9 @@ try:
         
         predictions.append({
             "district": district,
-            "predicted_week": next_date.isocalendar().week,
-            "predicted_year": next_date.year,
+            "predicted_week": int(next_date.isocalendar().week),
+            "predicted_year": int(next_date.year),
             "predicted_cases": pred_rounded,
-            # Arbitrary confidence interval for visualization
             "confidence_low": int(max(0, pred_rounded - (pred_rounded * 0.15))),
             "confidence_high": int(pred_rounded + (pred_rounded * 0.15))
         })

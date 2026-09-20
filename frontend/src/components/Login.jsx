@@ -74,12 +74,6 @@ export default function Login() {
             Sign In
           </button>
         </form>
-
-        <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
-          <p>Demo accounts:</p>
-          <p style={{ fontFamily: 'var(--font-mono)' }}>admin@denguewatch.gov / admin123</p>
-          <p style={{ fontFamily: 'var(--font-mono)' }}>officer@denguewatch.gov / officer123</p>
-        </div>
       </div>
     </div>
   )

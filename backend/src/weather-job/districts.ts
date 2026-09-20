@@ -24,6 +24,7 @@ export const DISTRICTS: Record<string, [number, number]> = {
   Kalutara: [6.5854, 79.9607],
   Gampaha: [7.084, 80.0098],
   Colombo: [6.9271, 79.8612],
+  Kalmunai: [7.4167, 81.8333],
 };
 
 export function lastCompleteIsoWeek(now = new Date()) {
@@ -47,13 +48,28 @@ export function lastCompleteIsoWeek(now = new Date()) {
 }
 
 export function lastNCompleteIsoWeeks(n: number, now = new Date()) {
+  const latest = lastCompleteIsoWeek(now);
   const weeks = [];
-  let cursor = now;
+  const startD = new Date(`${latest.start}T00:00:00Z`);
+  const endD = new Date(`${latest.end}T00:00:00Z`);
+
   for (let i = 0; i < n; i++) {
-    const period = lastCompleteIsoWeek(cursor);
-    weeks.push(period);
-    cursor = new Date(`${period.start}T00:00:00Z`);
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    const s = new Date(startD);
+    s.setUTCDate(s.getUTCDate() - i * 7);
+    const e = new Date(endD);
+    e.setUTCDate(e.getUTCDate() - i * 7);
+
+    const iso = new Date(s);
+    iso.setUTCDate(iso.getUTCDate() + 3);
+    const yearStart = new Date(Date.UTC(iso.getUTCFullYear(), 0, 4));
+    const week = 1 + Math.round(((iso.getTime() - yearStart.getTime()) / 86400000 - 3 + ((yearStart.getUTCDay() + 6) % 7)) / 7);
+
+    weeks.push({
+      start: s.toISOString().slice(0, 10),
+      end: e.toISOString().slice(0, 10),
+      year: iso.getUTCFullYear(),
+      week,
+    });
   }
   return weeks.reverse();
 }
@@ -79,6 +95,22 @@ const BASELINE: Record<string, number> = {
   Matara: 28,
   Trincomalee: 20,
 };
+
+/** Blend Keras output with recent case level. The BiLSTM was trained around a median of 8 cases/week. */
+export function calibrateToRecent(
+  modelPred: number,
+  lastCases?: number | null,
+  lag1?: number | null,
+): number {
+  if (lastCases == null || !Number.isFinite(lastCases)) {
+    return Math.max(0, Math.round(modelPred));
+  }
+  const prev = lag1 != null && Number.isFinite(lag1) ? lag1 : lastCases;
+  const trend = lastCases - prev;
+  const persist = Math.max(0, lastCases + (trend >= 0 ? 0.1 * trend : 0.55 * trend));
+  const weight = Math.min(0.75, Math.max(0.25, lastCases / (lastCases + 50)));
+  return Math.max(0, Math.round((1 - weight) * Math.max(0, modelPred) + weight * persist));
+}
 
 export function estimatePredictedCases(input: {
   district: string;
