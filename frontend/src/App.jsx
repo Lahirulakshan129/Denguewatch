@@ -76,7 +76,15 @@ export default function App() {
   const weatherData = Array.isArray(weatherRaw) ? weatherRaw : []
   const predictions = Array.isArray(predRaw) ? predRaw : []
   const allPredictions = Array.isArray(allPredRaw) ? allPredRaw : []
-  const dengueCounts = Array.isArray(dengueRaw) ? dengueRaw : []
+  const dengueCounts = Array.isArray(dengueRaw) ? dengueRaw : [];
+  // Determine latest prediction week across fetched and saved predictions
+  const latestPrediction = [...predictions, ...allPredictions]
+    .filter(p => p.predicted_year && p.predicted_week)
+    .sort((a, b) => {
+      const yearDiff = Number(b.predicted_year) - Number(a.predicted_year);
+      if (yearDiff !== 0) return yearDiff;
+      return Number(b.predicted_week) - Number(a.predicted_week);
+    })[0] || null;
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -437,9 +445,7 @@ export default function App() {
                   <StatCard
                     label="Predicted Cases"
                     value={loading ? null : predictions.length ? totalPredicted.toLocaleString() : '—'}
-                    sub={predictions[0]?.predicted_week
-                      ? `Week ${predictions[0].predicted_week}, ${predictions[0].predicted_year}`
-                      : 'National total'}
+                    sub={latestPrediction ? `Week ${latestPrediction.predicted_week}, ${latestPrediction.predicted_year}` : 'National total'}
                     accent="var(--accent-red)"
                     icon={<AlertTriangle size={15} />}
                     loading={loading}
