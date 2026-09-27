@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   CloudRain, Brain, Database, FileText, RefreshCw,
   Map as MapIcon, BarChart2, AlertTriangle, CheckCircle2,
-  TrendingUp, Wind, Droplets, Thermometer
+  TrendingUp, Wind, Droplets, Thermometer, Lock, LogOut
 } from 'lucide-react'
 import { useWeather, computeRisk } from './hooks/useWeather'
 import StatCard from './components/StatCard'
@@ -61,7 +61,7 @@ const TABS = [
 export default function App() {
   const { user, logout, loading: authLoading } = useAuth()
   const [tab, setTab]               = useState('overview')
-  const [dryRun, setDryRun]         = useState(false)
+  const [showLogin, setShowLogin]   = useState(false)
   const [selectedDistrict, setSel]  = useState(null)
   const [toast, setToast]           = useState(null)
   const [predictConfirm, setPredictConfirm] = useState(null)
@@ -84,7 +84,6 @@ export default function App() {
   }
 
   if (authLoading) return <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}><span className="spinner" /></div>
-  if (!user) return <Login />
 
   const nextPredictWeek = (() => {
     const last = lastCompleteIsoWeek()
@@ -98,11 +97,7 @@ export default function App() {
 
   const executePrediction = async () => {
     try {
-      const r = await runPrediction(dryRun)
-      if (dryRun) {
-        showToast('Preview only — forecasts were not saved. Turn off Dry Run, then run again.')
-        return
-      }
+      const r = await runPrediction(false)
       const note = r.engine === 'keras' ? ' · BiLSTM model' : r.fallback ? ' · fallback (ML host down)' : ''
       showToast(`Saved next-week forecast for ${r.district_count} districts${note}`)
     } catch (e) { showToast(e.message, 'error') }
@@ -110,7 +105,7 @@ export default function App() {
 
   const handlePredictionTrigger = () => {
     if (jobRunning.prediction) return
-    if (!dryRun && weekAlreadyPredicted(nextPredictWeek.year, nextPredictWeek.week)) {
+    if (weekAlreadyPredicted(nextPredictWeek.year, nextPredictWeek.week)) {
       setPredictConfirm(nextPredictWeek)
       return
     }
@@ -268,6 +263,9 @@ export default function App() {
         </div>
       )}
 
+      {/* Admin Login Modal */}
+      {showLogin && <Login onClose={() => setShowLogin(false)} />}
+
       {/* Header */}
       <header style={{
         borderBottom: '1px solid var(--border)',
@@ -298,7 +296,7 @@ export default function App() {
 
             {/* Nav tabs */}
             <nav style={{ display: 'flex', gap: 2, marginLeft: 12 }}>
-              {TABS.filter(t => t.id !== 'data' || ['ADMIN', 'OFFICER'].includes(user?.role)).map(t => (
+              {TABS.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
@@ -324,17 +322,8 @@ export default function App() {
 
             {/* Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {user?.role === 'ADMIN' && (
+              {user?.role === 'ADMIN' ? (
                 <>
-                  {/* Dry run toggle */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--text-muted)' }}>
-                    <label className="toggle">
-                      <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
-                      <span className="toggle-slider" />
-                    </label>
-                    Dry Run (preview, don’t save)
-                  </div>
-
                   {/* Prediction trigger */}
                   <button
                     className="btn btn-primary"
@@ -347,7 +336,50 @@ export default function App() {
                       : <Brain size={13} />}
                     Run Prediction
                   </button>
+
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: '#3b82f6',
+                    background: 'rgba(59,130,246,0.12)',
+                    border: '1px solid rgba(59,130,246,0.25)',
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                  }}>
+                    Admin
+                  </span>
+
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 10px', color: 'var(--accent-red)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={logout}
+                    title="Log Out"
+                  >
+                    <LogOut size={13} />
+                    Logout
+                  </button>
                 </>
+              ) : (
+                <button
+                  className="btn btn-ghost"
+                  style={{
+                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: '1px solid var(--border)',
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    background: 'var(--bg-elevated)',
+                  }}
+                  onClick={() => setShowLogin(true)}
+                  title="Admin Sign In"
+                >
+                  <Lock size={12} style={{ color: 'var(--accent-blue)' }} />
+                  Admin Login
+                </button>
               )}
 
               <button
@@ -357,15 +389,6 @@ export default function App() {
                 title="Refresh all data"
               >
                 <RefreshCw size={13} />
-              </button>
-
-              <button
-                className="btn btn-ghost"
-                style={{ padding: '8px 10px', color: 'var(--accent-red)' }}
-                onClick={logout}
-                title="Log Out"
-              >
-                Logout
               </button>
             </div>
           </div>

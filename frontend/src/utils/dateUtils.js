@@ -79,9 +79,14 @@ export function shiftIsoWeek(year, week, delta) {
   return getIsoWeekAndYear(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-/** Last finished ISO week (the week before the current one). */
+/** Last finished ISO week (the week before the current one, or current week on Sunday). */
 export function lastCompleteIsoWeek(now = new Date()) {
   const current = getIsoWeekAndYear(now);
+  const day = now.getDay();
+  // On Sunday (day 0), the current week reaches completion today
+  if (day === 0) {
+    return current;
+  }
   return shiftIsoWeek(current.year, current.week, -1);
 }
 

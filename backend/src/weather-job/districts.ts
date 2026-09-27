@@ -29,10 +29,11 @@ export const DISTRICTS: Record<string, [number, number]> = {
 
 export function lastCompleteIsoWeek(now = new Date()) {
   const utc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  const day = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() - day + 1);
+  const day = utc.getUTCDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
   const end = new Date(utc);
-  end.setUTCDate(end.getUTCDate() - 1);
+  if (day !== 0) {
+    end.setUTCDate(end.getUTCDate() - day);
+  }
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - 6);
   const iso = new Date(start);

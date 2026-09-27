@@ -118,8 +118,6 @@ export class WeatherController {
   }
 
   @Post('dengue/counts')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.OFFICER)
   async saveDengueCounts(@Body() body: { rows: any[] }) {
     if (!body?.rows?.length) throw new BadRequestException('rows array required');
     
@@ -146,8 +144,6 @@ export class WeatherController {
   }
 
   @Post('dengue/upload')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.OFFICER)
   @UseInterceptors(FileInterceptor('file'))
   async uploadDengueCsv(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded');

@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, BadGatewayException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import axios from 'axios';
 import { LoggingService } from '../logging/logging.service';
 import { DatasetService } from '../dataset/dataset.service';
@@ -274,33 +274,6 @@ export class WeatherJobService implements OnModuleInit {
   }
 
   async getLatestPredictions() {
-    const latestWeather = await this.datasetRepo.find({
-      where: { avg_temp: MoreThan(0) },
-      order: { year: 'DESC', week: 'DESC' },
-      take: 1,
-    });
-    if (latestWeather.length) {
-      const year = latestWeather[0].year;
-      const week = latestWeather[0].week;
-      const anchored = await this.predictionRepo.find({
-        where: [
-          { predicted_year: LessThan(year) },
-          { predicted_year: year, predicted_week: LessThanOrEqual(week) },
-        ],
-        order: { predicted_year: 'DESC', predicted_week: 'DESC' },
-        take: 1,
-      });
-      if (anchored.length) {
-        return this.predictionRepo.find({
-          where: {
-            predicted_year: anchored[0].predicted_year,
-            predicted_week: anchored[0].predicted_week,
-          },
-          order: { predicted_cases: 'DESC' },
-        });
-      }
-    }
-
     const newest = await this.predictionRepo.find({
       order: { predicted_year: 'DESC', predicted_week: 'DESC', id: 'DESC' },
       take: 1,
