@@ -285,13 +285,11 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, height: 56 }}>
             {/* Logo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 32, height: 32,
-                background: 'linear-gradient(135deg, #ef4444, #f97316)',
-                borderRadius: 8,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 16
-              }}>🦟</div>
+              <img
+                src="/logo.png"
+                alt="DengueWatch logo"
+                style={{ width: 36, height: 36, objectFit: 'contain' }}
+              />
               <div>
                 <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, letterSpacing: '-0.02em', lineHeight: 1 }}>
                   DengueWatch
