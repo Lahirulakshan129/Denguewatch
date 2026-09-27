@@ -296,7 +296,7 @@ export default function App() {
 
             {/* Nav tabs */}
             <nav style={{ display: 'flex', gap: 2, marginLeft: 12 }}>
-              {TABS.map(t => (
+              {TABS.filter(t => t.id !== 'data' || user?.role === 'ADMIN').map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
@@ -354,7 +354,10 @@ export default function App() {
                   <button
                     className="btn btn-ghost"
                     style={{ padding: '6px 10px', color: 'var(--accent-red)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
-                    onClick={logout}
+                    onClick={() => {
+                      logout();
+                      if (tab === 'data') setTab('overview');
+                    }}
                     title="Log Out"
                   >
                     <LogOut size={13} />
@@ -928,7 +931,7 @@ export default function App() {
         )}
 
         {/* ── DATA INPUT TAB ── */}
-        {tab === 'data' && (
+        {tab === 'data' && user?.role === 'ADMIN' && (
           <div className="fade-up">
             <div style={{ marginBottom: 24 }}>
               <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>

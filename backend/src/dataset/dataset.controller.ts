@@ -91,16 +91,22 @@ export class DatasetController {
   }
 
   @Get('download')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async downloadCsv(@Res() res: Response) {
     return this.sendCsv(res, 'training_dataset.csv', await this.dataset.toTrainingCsv());
   }
 
   @Get('download/weather')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async downloadWeather(@Res() res: Response) {
     return this.sendCsv(res, 'weather_weekly.csv', await this.dataset.toWeatherCsv());
   }
 
   @Get('download/predictions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async downloadPredictions(@Res() res: Response) {
     return this.sendCsv(res, 'predictions.csv', await this.dataset.toPredictionsCsv());
   }
