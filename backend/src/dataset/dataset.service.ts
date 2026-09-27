@@ -113,16 +113,24 @@ export class DatasetService {
       }
       const district = row.district;
       if (!year || !week || !district) continue;
+      const avg_temp = this.num(row.avg_temp);
+      const avg_humidity = this.num(row.avg_humidity);
+      const total_rainfall = this.num(row.total_rainfall ?? row.total_precip ?? row.precipitation);
+      const avg_windspeed = this.num(row.avg_windspeed ?? row.wind_speed);
       const cases = this.num(row.dengue_cases ?? row.cases);
       const districtId = this.num(row.district_id ?? row.districtid);
+      // Skip placeholder rows where all weather AND case data is null (e.g. future week stubs)
+      const hasWeather = avg_temp != null || avg_humidity != null || total_rainfall != null;
+      const hasCases = cases != null;
+      if (!hasWeather && !hasCases) continue;
       batch.push({
         year,
         week,
         district,
-        avg_temp: this.num(row.avg_temp),
-        avg_humidity: this.num(row.avg_humidity),
-        total_rainfall: this.num(row.total_rainfall ?? row.total_precip ?? row.precipitation),
-        avg_windspeed: this.num(row.avg_windspeed ?? row.wind_speed),
+        avg_temp,
+        avg_humidity,
+        total_rainfall,
+        avg_windspeed,
         dengue_cases: cases != null ? Math.round(cases) : null,
         max_temp: this.num(row.max_temp),
         min_temp: this.num(row.min_temp),
@@ -138,32 +146,23 @@ export class DatasetService {
 
   private async bulkUpsert(rows: Partial<DatasetRecord>[]): Promise<number> {
     if (!rows.length) return 0;
-    const chunkSize = 500;
     let saved = 0;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-      await this.datasetRepo
-        .createQueryBuilder()
-        .insert()
-        .into(DatasetRecord)
-        .values(chunk)
-        .orUpdate(
-          [
-            'avg_temp',
-            'avg_humidity',
-            'total_rainfall',
-            'avg_windspeed',
-            'dengue_cases',
-            'max_temp',
-            'min_temp',
-            'rainy_days',
-            'population_density',
-            'district_id',
-          ],
-          ['year', 'week', 'district'],
-        )
-        .execute();
-      saved += chunk.length;
+    for (const row of rows) {
+      let record = await this.datasetRepo.findOne({
+        where: { year: row.year as number, week: row.week as number, district: row.district as string },
+      });
+      if (!record) {
+        record = this.datasetRepo.create(row);
+      } else {
+        // Only overwrite existing fields if the incoming value is not null/undefined
+        for (const [key, value] of Object.entries(row)) {
+          if (value !== null && value !== undefined) {
+            (record as any)[key] = value;
+          }
+        }
+      }
+      await this.datasetRepo.save(record);
+      saved++;
     }
     return saved;
   }
