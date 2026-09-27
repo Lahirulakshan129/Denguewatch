@@ -145,7 +145,11 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
                 <td>
                   {row.predicted_cases != null ? (
                     <div>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#ef4444' }}>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: 600,
+                        color: row.predicted_cases > 50 ? '#ef4444' : 'var(--text-primary)'
+                      }}>
                         {row.predicted_cases}
                       </span>
                       {row.confidence_low != null && (

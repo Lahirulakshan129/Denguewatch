@@ -389,7 +389,7 @@ export default function App() {
                   title="Admin Sign In"
                 >
                   <Lock size={12} style={{ color: 'var(--accent-blue)' }} />
-                  Admin Login
+                  Login
                 </button>
               )}
 
