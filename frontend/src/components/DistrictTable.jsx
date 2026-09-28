@@ -111,7 +111,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
               <th onClick={() => toggleSort('humidity')}>Humidity % <SortIcon col="humidity" /></th>
               <th onClick={() => toggleSort('precipitation')}>Rain mm <SortIcon col="precipitation" /></th>
               <th onClick={() => toggleSort('predicted_cases')}>Predicted <SortIcon col="predicted_cases" /></th>
-              <th onClick={() => toggleSort('reported_cases')}>Reported <SortIcon col="reported_cases" /></th>
               <th>Week</th>
             </tr>
           </thead>
@@ -159,11 +158,6 @@ export default function DistrictTable({ weatherData, predictions, dengue, onDist
                       )}
                     </div>
                   ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                </td>
-                <td>
-                  {row.reported_cases != null
-                    ? <span style={{ fontFamily: 'var(--font-mono)', color: '#eab308' }}>{row.reported_cases}</span>
-                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </td>
                 <td>
                   <WeekBadge week={row.week} year={row.year} compact />

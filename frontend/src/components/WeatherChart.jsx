@@ -304,11 +304,13 @@ export function DistrictYearlyComparisonChart({ district, dengueCounts, allPredi
   const sortedYears = Array.from(years).sort()
   
   const YEAR_COLORS = [
-    '#3b82f6', // 2022 blue
+    '#b87a94', // 2021 blue
+    '#643bf6', // 2022 blue
     '#10b981', // 2023 green
     '#f59e0b', // 2024 yellow
     '#ef4444', // 2025 red
     '#8b5cf6', // 2026 purple
+    '#3b82f6', // 2027 blue
     '#64748b'  // forecasted gray
   ]
 

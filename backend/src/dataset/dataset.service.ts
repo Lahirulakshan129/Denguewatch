@@ -222,6 +222,29 @@ export class DatasetService {
           cases: r.dengue_cases,
         })),
     );
+    const trainingCsvPath = path.resolve(process.cwd(), 'data/training_dataset.csv');
+    this.writeCsv(
+      trainingCsvPath,
+      [
+        'Year', 'Week', 'District', 'Avg_Temp', 'Avg_Humidity', 'Total_Rainfall', 'Avg_Windspeed',
+        'Dengue_Cases', 'Max_Temp', 'Min_Temp', 'Rainy_Days', 'Population_Density', 'District_Id',
+      ],
+      records.map((r) => ({
+        Year: r.year,
+        Week: r.week,
+        District: r.district,
+        Avg_Temp: r.avg_temp ?? '',
+        Avg_Humidity: r.avg_humidity ?? '',
+        Total_Rainfall: r.total_rainfall ?? '',
+        Avg_Windspeed: r.avg_windspeed ?? '',
+        Dengue_Cases: r.dengue_cases ?? '',
+        Max_Temp: r.max_temp ?? '',
+        Min_Temp: r.min_temp ?? '',
+        Rainy_Days: r.rainy_days ?? '',
+        Population_Density: r.population_density ?? '',
+        District_Id: r.district_id ?? '',
+      })),
+    );
   }
 
   async toTrainingCsv() {

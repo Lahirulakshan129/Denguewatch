@@ -7,7 +7,7 @@ import { LoggingService } from '../logging/logging.service';
 import { DatasetService } from '../dataset/dataset.service';
 import { DatasetRecord } from '../dataset/dataset.entity';
 import { PredictionRecord } from '../prediction/prediction.entity';
-import { DISTRICTS, calibrateToRecent, lastNCompleteIsoWeeks } from './districts';
+import { DISTRICTS, DISTRICT_METADATA, calibrateToRecent, lastNCompleteIsoWeeks } from './districts';
 
 /** Nest always needs a POST /predict. Modal function URLs already are that endpoint. */
 function resolvePredictUrl(serviceUrl: string) {
@@ -54,6 +54,7 @@ export class WeatherJobService implements OnModuleInit {
         for (const [district, [lat, lon]] of Object.entries(DISTRICTS)) {
           try {
             const metrics = await this.fetchOpenMeteo(lat, lon, period.start, period.end);
+            const meta = DISTRICT_METADATA[district];
             if (!dryRun) {
               await this.dataset.upsertRow({
                 year: period.year,
@@ -63,6 +64,11 @@ export class WeatherJobService implements OnModuleInit {
                 avg_humidity: metrics.avg_humidity,
                 total_rainfall: metrics.total_rainfall,
                 avg_windspeed: metrics.avg_windspeed,
+                max_temp: metrics.max_temp,
+                min_temp: metrics.min_temp,
+                rainy_days: metrics.rainy_days,
+                district_id: meta?.district_id,
+                population_density: meta?.population_density,
               });
             }
             fetched++;
@@ -117,6 +123,7 @@ export class WeatherJobService implements OnModuleInit {
             }
             try {
               const metrics = await this.fetchOpenMeteo(lat, lon, period.start, period.end);
+              const meta = DISTRICT_METADATA[district];
               await this.dataset.upsertRow({
                 year: period.year,
                 week: period.week,
@@ -125,6 +132,11 @@ export class WeatherJobService implements OnModuleInit {
                 avg_humidity: metrics.avg_humidity,
                 total_rainfall: metrics.total_rainfall,
                 avg_windspeed: metrics.avg_windspeed,
+                max_temp: metrics.max_temp,
+                min_temp: metrics.min_temp,
+                rainy_days: metrics.rainy_days,
+                district_id: meta?.district_id,
+                population_density: meta?.population_density,
               });
             } catch (err) {
               this.logger.warn(`Failed to fetch ${district} W${period.week}: ${err.message}`);
@@ -298,7 +310,7 @@ export class WeatherJobService implements OnModuleInit {
       longitude: lon,
       start_date: start,
       end_date: end,
-      daily: 'temperature_2m_mean,relative_humidity_2m_mean,precipitation_sum,wind_speed_10m_mean',
+      daily: 'temperature_2m_mean,temperature_2m_max,temperature_2m_min,relative_humidity_2m_mean,precipitation_sum,wind_speed_10m_mean',
       timezone: 'Asia/Colombo',
     };
     let data: any;
@@ -316,10 +328,22 @@ export class WeatherJobService implements OnModuleInit {
       throw new Error('Open-Meteo returned no daily weather');
     }
     const avg = (arr: number[]) => arr.filter((n) => n != null).reduce((s, n) => s + n, 0) / (arr.filter((n) => n != null).length || 1);
+    const validMax = (days.temperature_2m_max || []).filter((n: any) => n != null);
+    const validMin = (days.temperature_2m_min || []).filter((n: any) => n != null);
+    const validRain = (days.precipitation_sum || []).filter((n: any) => n != null);
+
+    const avgTemp = Number(avg(days.temperature_2m_mean).toFixed(2));
+    const maxTemp = validMax.length ? Number(Math.max(...validMax).toFixed(2)) : Number((avgTemp + 2.5).toFixed(2));
+    const minTemp = validMin.length ? Number(Math.min(...validMin).toFixed(2)) : Number((avgTemp - 2.5).toFixed(2));
+    const rainyDays = validRain.filter((r: number) => r >= 1.0).length;
+
     return {
-      avg_temp: Number(avg(days.temperature_2m_mean).toFixed(2)),
+      avg_temp: avgTemp,
+      max_temp: maxTemp,
+      min_temp: minTemp,
+      rainy_days: rainyDays,
       avg_humidity: Number(avg(days.relative_humidity_2m_mean || []).toFixed(2)),
-      total_rainfall: Number((days.precipitation_sum || []).reduce((s, n) => s + (n || 0), 0).toFixed(2)),
+      total_rainfall: Number(validRain.reduce((s: number, n: number) => s + (n || 0), 0).toFixed(2)),
       avg_windspeed: Number(avg(days.wind_speed_10m_mean || []).toFixed(2)),
     };
   }

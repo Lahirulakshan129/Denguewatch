@@ -27,6 +27,35 @@ export const DISTRICTS: Record<string, [number, number]> = {
   Kalmunai: [7.4167, 81.8333],
 };
 
+export const DISTRICT_METADATA: Record<string, { district_id: number; population_density: number }> = {
+  Ampara: { district_id: 1, population_density: 169.01 },
+  Anuradhapura: { district_id: 2, population_density: 132.99 },
+  Badulla: { district_id: 3, population_density: 310.46 },
+  Batticaloa: { district_id: 4, population_density: 206.64 },
+  Colombo: { district_id: 5, population_density: 3491.58 },
+  Galle: { district_id: 6, population_density: 683.02 },
+  Gampaha: { district_id: 7, population_density: 1753.85 },
+  Hambantota: { district_id: 8, population_density: 259.49 },
+  Jaffna: { district_id: 9, population_density: 612.60 },
+  Kalmunai: { district_id: 10, population_density: 3337.86 },
+  Kalutara: { district_id: 11, population_density: 811.07 },
+  Kandy: { district_id: 12, population_density: 763.65 },
+  Kegalle: { district_id: 13, population_density: 523.62 },
+  Kilinochchi: { district_id: 14, population_density: 105.78 },
+  Kurunegala: { district_id: 15, population_density: 362.56 },
+  Mannar: { district_id: 16, population_density: 58.86 },
+  Matale: { district_id: 17, population_density: 264.49 },
+  Matara: { district_id: 18, population_density: 670.68 },
+  Monaragala: { district_id: 19, population_density: 91.08 },
+  Mullaitivu: { district_id: 20, population_density: 40.86 },
+  'Nuwara Eliya': { district_id: 21, population_density: 441.22 },
+  Polonnaruwa: { district_id: 22, population_density: 135.66 },
+  Puttalam: { district_id: 23, population_density: 272.52 },
+  Ratnapura: { district_id: 24, population_density: 358.81 },
+  Trincomalee: { district_id: 25, population_density: 161.68 },
+  Vavuniya: { district_id: 26, population_density: 97.96 },
+};
+
 export function lastCompleteIsoWeek(now = new Date()) {
   const utc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const day = utc.getUTCDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
