@@ -12,7 +12,7 @@ export class SchedulerService {
   }
 
   // Every Sunday at midnight
-  @Cron('0 0 0 * * 0')
+  @Cron('0 30 16 * * 0')
   async runWeeklyJob() {
     this.logger.log('Sunday cron: running weekly weather fetch + prediction');
     try {
